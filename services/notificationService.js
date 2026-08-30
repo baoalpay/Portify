@@ -1,6 +1,4 @@
-import AsyncStorage from '@react-native-async-storage/async-storage';
-
-const ALERTS_KEY = 'portify_price_alerts';
+import { alertsRepository } from '../repositories/alertsRepository';
 
 // Bildirim izni - şimdilik sadece true döndür
 // Development build'de gerçek notification eklenecek
@@ -24,22 +22,12 @@ const formatPrice = (price) => {
 
 // Alarmları kaydet
 export const saveAlerts = async (alerts) => {
-  try {
-    await AsyncStorage.setItem(ALERTS_KEY, JSON.stringify(alerts));
-  } catch (error) {
-    console.error('Alarmlar kaydedilemedi:', error);
-  }
+  await alertsRepository.saveAlerts(alerts);
 };
 
 // Alarmları yükle
 export const loadAlerts = async () => {
-  try {
-    const stored = await AsyncStorage.getItem(ALERTS_KEY);
-    return stored ? JSON.parse(stored) : {};
-  } catch (error) {
-    console.error('Alarmlar yüklenemedi:', error);
-    return {};
-  }
+  return alertsRepository.loadAlerts();
 };
 
 // Tek bir alarm ekle/güncelle
@@ -126,5 +114,5 @@ export const resetAlert = async (holdingId) => {
 
 // Tüm alarmları temizle
 export const clearAllAlerts = async () => {
-  await AsyncStorage.removeItem(ALERTS_KEY);
+  await alertsRepository.clearAlerts();
 };

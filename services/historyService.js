@@ -1,6 +1,5 @@
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import { historyRepository } from '../repositories/historyRepository';
 
-const HISTORY_KEY = 'portify_history';
 const MAX_DAYS = 365;
 
 // Bugünün tarihini YYYY-MM-DD formatında al
@@ -11,16 +10,7 @@ const getTodayKey = () => {
 
 // Geçmiş verilerini yükle
 export const loadHistory = async () => {
-  try {
-    const stored = await AsyncStorage.getItem(HISTORY_KEY);
-    if (stored) {
-      return JSON.parse(stored);
-    }
-    return [];
-  } catch (error) {
-    console.error('Geçmiş yüklenemedi:', error);
-    return [];
-  }
+  return historyRepository.loadHistory();
 };
 
 // Bugünün verisini kaydet (günde 1 kez)
@@ -52,8 +42,8 @@ export const saveToday = async (portfolioValue, totalCost) => {
     
     // Maksimum gün sayısını aş, eskileri sil
     const trimmedHistory = history.slice(-MAX_DAYS);
-    
-    await AsyncStorage.setItem(HISTORY_KEY, JSON.stringify(trimmedHistory));
+
+    await historyRepository.saveHistory(trimmedHistory);
     return trimmedHistory;
   } catch (error) {
     console.error('Geçmiş kaydedilemedi:', error);
@@ -152,13 +142,7 @@ export const formatChartData = (historyData) => {
 
 // Tüm geçmişi sil
 export const clearHistory = async () => {
-  try {
-    await AsyncStorage.removeItem(HISTORY_KEY);
-    return true;
-  } catch (error) {
-    console.error('Geçmiş silinemedi:', error);
-    return false;
-  }
+  return historyRepository.clearHistory();
 };
 
 // Geçmiş veri sayısını al

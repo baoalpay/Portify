@@ -1,10 +1,7 @@
 import { create } from 'zustand';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { updateAllPrices } from '../services/priceService';
-
-const PORTFOLIOS_KEY = 'portify_portfolios';
-const ACTIVE_PORTFOLIO_KEY = 'portify_active_portfolio';
-const SETTINGS_KEY = 'portify_settings';
+import { portfolioRepository } from '../repositories/portfolioRepository';
+import { holdingsRepository } from '../repositories/holdingsRepository';
 
 // Varsayılan portföy
 const DEFAULT_PORTFOLIO = {
@@ -36,14 +33,13 @@ const usePortfolioStore = create((set, get) => ({
   // Tüm portföyleri yükle
   loadPortfolios: async () => {
     try {
-      const stored = await AsyncStorage.getItem(PORTFOLIOS_KEY);
-      if (stored) {
-        const portfolios = JSON.parse(stored);
+      const portfolios = await portfolioRepository.loadPortfolios();
+      if (portfolios) {
         set({ portfolios: portfolios.length > 0 ? portfolios : [DEFAULT_PORTFOLIO] });
       }
-      
+
       // Aktif portföyü yükle
-      const activeId = await AsyncStorage.getItem(ACTIVE_PORTFOLIO_KEY);
+      const activeId = await portfolioRepository.loadActivePortfolioId();
       if (activeId) {
         set({ activePortfolioId: activeId });
       }
@@ -54,17 +50,13 @@ const usePortfolioStore = create((set, get) => ({
 
   // Portföyleri kaydet
   savePortfolios: async (portfolios) => {
-    try {
-      await AsyncStorage.setItem(PORTFOLIOS_KEY, JSON.stringify(portfolios));
-    } catch (error) {
-      console.error('Portföyler kaydedilemedi:', error);
-    }
+    await portfolioRepository.savePortfolios(portfolios);
   },
 
   // Aktif portföyü değiştir
   setActivePortfolio: async (portfolioId) => {
     set({ activePortfolioId: portfolioId });
-    await AsyncStorage.setItem(ACTIVE_PORTFOLIO_KEY, portfolioId);
+    await portfolioRepository.saveActivePortfolioId(portfolioId);
     // Yeni portföyün holdinglerini yükle
     await get().loadHoldings();
   },
@@ -133,7 +125,7 @@ const usePortfolioStore = create((set, get) => ({
     }
 
     // Silinen portföyün holdinglerini de sil
-    await AsyncStorage.removeItem(`portify_holdings_${portfolioId}`);
+    await holdingsRepository.removeHoldings(portfolioId);
 
     return { success: true };
   },
@@ -145,16 +137,8 @@ const usePortfolioStore = create((set, get) => ({
     try {
       set({ isLoading: true });
       const { activePortfolioId } = get();
-      const key = activePortfolioId === 'default' 
-        ? 'portify_holdings' 
-        : `portify_holdings_${activePortfolioId}`;
-      
-      const stored = await AsyncStorage.getItem(key);
-      if (stored) {
-        set({ holdings: JSON.parse(stored) });
-      } else {
-        set({ holdings: [] });
-      }
+      const holdings = await holdingsRepository.loadHoldings(activePortfolioId);
+      set({ holdings });
     } catch (error) {
       console.error('Holdings yüklenemedi:', error);
     } finally {
@@ -164,16 +148,8 @@ const usePortfolioStore = create((set, get) => ({
 
   // Holdingleri kaydet
   saveHoldings: async (holdings) => {
-    try {
-      const { activePortfolioId } = get();
-      const key = activePortfolioId === 'default' 
-        ? 'portify_holdings' 
-        : `portify_holdings_${activePortfolioId}`;
-      
-      await AsyncStorage.setItem(key, JSON.stringify(holdings));
-    } catch (error) {
-      console.error('Holdings kaydedilemedi:', error);
-    }
+    const { activePortfolioId } = get();
+    await holdingsRepository.saveHoldings(activePortfolioId, holdings);
   },
 
   // Holding ekle
@@ -434,14 +410,9 @@ const usePortfolioStore = create((set, get) => ({
     set({ holdings: updatedHoldings });
     await get().saveHoldings(updatedHoldings);
 
-    // Hedef portföyün holdinglerini yükle
-    const targetKey = targetPortfolioId === 'default' 
-      ? 'portify_holdings' 
-      : `portify_holdings_${targetPortfolioId}`;
-    
     try {
-      const targetStored = await AsyncStorage.getItem(targetKey);
-      const targetHoldings = targetStored ? JSON.parse(targetStored) : [];
+      // Hedef portföyün holdinglerini yükle
+      const targetHoldings = await holdingsRepository.loadHoldings(targetPortfolioId);
       
       // Aynı sembol var mı kontrol et
       const existingIndex = targetHoldings.findIndex(
@@ -471,7 +442,7 @@ const usePortfolioStore = create((set, get) => ({
         });
       }
 
-      await AsyncStorage.setItem(targetKey, JSON.stringify(targetHoldings));
+      await holdingsRepository.saveHoldings(targetPortfolioId, targetHoldings);
       return { success: true };
     } catch (error) {
       console.error('Transfer hatası:', error);

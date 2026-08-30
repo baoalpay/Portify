@@ -13,8 +13,8 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme, THEME_COLORS } from '../context/ThemeContext';
 import { Spacing, BorderRadius, Typography } from '../constants/theme';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import usePortfolioStore from '../store/PortfolioStore';
+import { holdingsRepository } from '../repositories/holdingsRepository';
 
 const LEGAL_CONTENT = {
   disclaimer: {
@@ -211,7 +211,7 @@ const SettingsScreen = () => {
           text: 'Sil',
           style: 'destructive',
           onPress: async () => {
-            await AsyncStorage.removeItem('portify_holdings');
+            await holdingsRepository.removeHoldings('default');
             await loadHoldings();
             Alert.alert('Başarılı', 'Tüm veriler silindi.');
           },

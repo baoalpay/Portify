@@ -9,11 +9,9 @@ import {
   Animated,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import { preferencesRepository } from '../repositories/preferencesRepository';
 
 const { width, height } = Dimensions.get('window');
-
-const ONBOARDING_KEY = 'portify_onboarding_completed';
 
 const SLIDES = [
   {
@@ -57,11 +55,7 @@ const OnboardingScreen = ({ onComplete }) => {
   };
 
   const completeOnboarding = async () => {
-    try {
-      await AsyncStorage.setItem(ONBOARDING_KEY, 'true');
-    } catch (error) {
-      console.log('Onboarding kayıt hatası:', error);
-    }
+    await preferencesRepository.setOnboardingCompleted();
     onComplete();
   };
 
@@ -206,21 +200,12 @@ const OnboardingScreen = ({ onComplete }) => {
 
 // Onboarding tamamlandı mı kontrol et
 export const checkOnboardingCompleted = async () => {
-  try {
-    const completed = await AsyncStorage.getItem(ONBOARDING_KEY);
-    return completed === 'true';
-  } catch (error) {
-    return false;
-  }
+  return preferencesRepository.isOnboardingCompleted();
 };
 
 // Onboarding'ı sıfırla (test için)
 export const resetOnboarding = async () => {
-  try {
-    await AsyncStorage.removeItem(ONBOARDING_KEY);
-  } catch (error) {
-    console.log('Onboarding sıfırlama hatası:', error);
-  }
+  await preferencesRepository.resetOnboarding();
 };
 
 const styles = StyleSheet.create({

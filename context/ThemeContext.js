@@ -1,7 +1,7 @@
 import React, { createContext, useState, useContext, useEffect } from 'react';
 import { useColorScheme } from 'react-native';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Colors } from '../constants/theme';
+import { preferencesRepository } from '../repositories/preferencesRepository';
 
 const ThemeContext = createContext();
 
@@ -29,34 +29,26 @@ export const ThemeProvider = ({ children }) => {
   }, []);
 
   const loadThemePreference = async () => {
-    try {
-      const savedTheme = await AsyncStorage.getItem('theme');
-      if (savedTheme !== null) {
-        setIsDark(savedTheme === 'dark');
+    const savedTheme = await preferencesRepository.loadTheme();
+    if (savedTheme !== null) {
+      setIsDark(savedTheme === 'dark');
+    }
+
+    // Renk tercihini yükle
+    const savedColor = await preferencesRepository.loadThemeColor();
+    if (savedColor) {
+      const colorObj = THEME_COLORS.find(c => c.id === savedColor);
+      if (colorObj) {
+        setPrimaryColor(colorObj.color);
+        setSelectedColorId(savedColor);
       }
-      
-      // Renk tercihini yükle
-      const savedColor = await AsyncStorage.getItem('theme_color');
-      if (savedColor) {
-        const colorObj = THEME_COLORS.find(c => c.id === savedColor);
-        if (colorObj) {
-          setPrimaryColor(colorObj.color);
-          setSelectedColorId(savedColor);
-        }
-      }
-    } catch (error) {
-      console.log('Error loading theme preference:', error);
     }
   };
 
   const toggleTheme = async () => {
     const newTheme = !isDark;
     setIsDark(newTheme);
-    try {
-      await AsyncStorage.setItem('theme', newTheme ? 'dark' : 'light');
-    } catch (error) {
-      console.log('Error saving theme preference:', error);
-    }
+    await preferencesRepository.saveTheme(newTheme ? 'dark' : 'light');
   };
 
   const setThemeColor = async (colorId) => {
@@ -64,11 +56,7 @@ export const ThemeProvider = ({ children }) => {
     if (colorObj) {
       setPrimaryColor(colorObj.color);
       setSelectedColorId(colorId);
-      try {
-        await AsyncStorage.setItem('theme_color', colorId);
-      } catch (error) {
-        console.log('Error saving theme color:', error);
-      }
+      await preferencesRepository.saveThemeColor(colorId);
     }
   };
 
