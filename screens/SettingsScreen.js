@@ -14,6 +14,8 @@ import { Ionicons } from '@expo/vector-icons';
 import { useTheme, THEME_COLORS } from '../context/ThemeContext';
 import { Spacing, BorderRadius, Typography } from '../constants/theme';
 import usePortfolioStore from '../store/PortfolioStore';
+import { backupRepository } from '../repositories/backupRepository';
+import { exportBackup, pickBackupFile } from '../services/backupService';
 
 const LEGAL_CONTENT = {
   disclaimer: {
@@ -166,6 +168,9 @@ const SettingsScreen = () => {
   const { colors, primary, isDark, toggleTheme, setThemeColor, selectedColorId } = useTheme();
   
   const resetAllData = usePortfolioStore((state) => state.resetAllData);
+  const loadPortfolios = usePortfolioStore((state) => state.loadPortfolios);
+  const loadHoldings = usePortfolioStore((state) => state.loadHoldings);
+  const loadSettings = usePortfolioStore((state) => state.loadSettings);
   const settings = usePortfolioStore((state) => state.settings);
   const setCurrency = usePortfolioStore((state) => state.setCurrency);
   const isPremium = usePortfolioStore((state) => state.isPremium);
@@ -198,6 +203,54 @@ const SettingsScreen = () => {
   const getSelectedColorName = () => {
     const colorObj = THEME_COLORS.find(c => c.id === selectedColorId);
     return colorObj?.name || 'Mor';
+  };
+
+  const handleExport = async () => {
+    const result = await exportBackup();
+    if (!result.success && result.error) {
+      Alert.alert('Hata', result.error);
+    }
+  };
+
+  const handleImport = async () => {
+    const picked = await pickBackupFile();
+
+    if (picked.canceled) return;
+    if (picked.error) {
+      Alert.alert('Hata', picked.error);
+      return;
+    }
+
+    const { valid, errors } = backupRepository.validateBackup(picked.content);
+    if (!valid) {
+      Alert.alert('Geçersiz Yedek', errors.join('\n'));
+      return;
+    }
+
+    const doImport = async () => {
+      const result = await backupRepository.importData(picked.content);
+      if (result.success) {
+        await loadPortfolios();
+        await loadSettings();
+        await loadHoldings();
+        Alert.alert('Başarılı', 'Yedek geri yüklendi.');
+      } else {
+        Alert.alert('Hata', result.errors.join('\n'));
+      }
+    };
+
+    if (await backupRepository.hasExistingData()) {
+      Alert.alert(
+        'Üzerine Yazılacak',
+        'Mevcut portföyünüzün üzerine yazılacak ve şu anki verileriniz silinecek. Devam etmek istiyor musunuz?',
+        [
+          { text: 'İptal', style: 'cancel' },
+          { text: 'Geri Yükle', style: 'destructive', onPress: doImport },
+        ]
+      );
+    } else {
+      await doImport();
+    }
   };
 
   const clearAllData = async () => {
@@ -340,6 +393,34 @@ const SettingsScreen = () => {
             VERİ YÖNETİMİ
           </Text>
           <View style={[styles.groupCard, { backgroundColor: colors.surface }]}>
+            <TouchableOpacity style={styles.settingItem} activeOpacity={0.7} onPress={handleExport}>
+              <View style={styles.settingLeft}>
+                <View style={[styles.iconContainer, { backgroundColor: primary + '15' }]}>
+                  <Ionicons name="download-outline" size={22} color={primary} />
+                </View>
+                <Text style={[styles.settingLabel, { color: colors.text }]}>
+                  Yedeği Dışa Aktar
+                </Text>
+              </View>
+              <Ionicons name="chevron-forward" size={20} color={colors.textSecondary} />
+            </TouchableOpacity>
+
+            <View style={[styles.divider, { backgroundColor: colors.border }]} />
+
+            <TouchableOpacity style={styles.settingItem} activeOpacity={0.7} onPress={handleImport}>
+              <View style={styles.settingLeft}>
+                <View style={[styles.iconContainer, { backgroundColor: primary + '15' }]}>
+                  <Ionicons name="cloud-upload-outline" size={22} color={primary} />
+                </View>
+                <Text style={[styles.settingLabel, { color: colors.text }]}>
+                  Yedekten Geri Yükle
+                </Text>
+              </View>
+              <Ionicons name="chevron-forward" size={20} color={colors.textSecondary} />
+            </TouchableOpacity>
+
+            <View style={[styles.divider, { backgroundColor: colors.border }]} />
+
             <TouchableOpacity style={styles.settingItem} activeOpacity={0.7} onPress={clearAllData}>
               <View style={styles.settingLeft}>
                 <View style={[styles.iconContainer, { backgroundColor: '#EF4444' + '15' }]}>
