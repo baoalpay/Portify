@@ -14,7 +14,6 @@ import { Ionicons } from '@expo/vector-icons';
 import { useTheme, THEME_COLORS } from '../context/ThemeContext';
 import { Spacing, BorderRadius, Typography } from '../constants/theme';
 import usePortfolioStore from '../store/PortfolioStore';
-import { holdingsRepository } from '../repositories/holdingsRepository';
 
 const LEGAL_CONTENT = {
   disclaimer: {
@@ -166,7 +165,7 @@ Gizlilik ile ilgili sorularınız için: baoalpay@gmail.com`
 const SettingsScreen = () => {
   const { colors, primary, isDark, toggleTheme, setThemeColor, selectedColorId } = useTheme();
   
-  const loadHoldings = usePortfolioStore((state) => state.loadHoldings);
+  const resetAllData = usePortfolioStore((state) => state.resetAllData);
   const settings = usePortfolioStore((state) => state.settings);
   const setCurrency = usePortfolioStore((state) => state.setCurrency);
   const isPremium = usePortfolioStore((state) => state.isPremium);
@@ -211,8 +210,7 @@ const SettingsScreen = () => {
           text: 'Sil',
           style: 'destructive',
           onPress: async () => {
-            await holdingsRepository.removeHoldings('default');
-            await loadHoldings();
+            await resetAllData();
             Alert.alert('Başarılı', 'Tüm veriler silindi.');
           },
         },

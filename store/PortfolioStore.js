@@ -3,6 +3,7 @@ import { updateAllPrices } from '../services/priceService';
 import { portfolioRepository } from '../repositories/portfolioRepository';
 import { holdingsRepository } from '../repositories/holdingsRepository';
 import { settingsRepository } from '../repositories/settingsRepository';
+import { maintenanceRepository } from '../repositories/maintenanceRepository';
 
 // Varsayılan portföy
 const DEFAULT_PORTFOLIO = {
@@ -48,6 +49,18 @@ const usePortfolioStore = create((set, get) => ({
     const settings = { ...get().settings, ...updates };
     set({ settings });
     await settingsRepository.saveSettings(settings);
+  },
+
+  // Tüm portföy verilerini sil ve store'u başlangıç durumuna döndür
+  // (tema ve onboarding tercihi korunur — bkz. maintenanceRepository)
+  resetAllData: async () => {
+    await maintenanceRepository.clearAllData();
+    set({
+      holdings: [],
+      portfolios: [DEFAULT_PORTFOLIO],
+      activePortfolioId: 'default',
+      settings: { currency: 'TRY', lastUpdated: null },
+    });
   },
 
   // ============ PORTFÖY YÖNETİMİ ============
