@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { updateAllPrices } from '../services/priceService';
+import { priceRepository } from '../repositories/priceRepository';
 import { portfolioRepository } from '../repositories/portfolioRepository';
 import { holdingsRepository } from '../repositories/holdingsRepository';
 import { settingsRepository } from '../repositories/settingsRepository';
@@ -332,7 +332,7 @@ const usePortfolioStore = create((set, get) => ({
     if (holdings.length === 0) return;
 
     try {
-      const updatedHoldings = await updateAllPrices(holdings);
+      const updatedHoldings = await priceRepository.updateAllPrices(holdings);
       set({ holdings: updatedHoldings });
       await get().saveSettings({ lastUpdated: new Date().toISOString() });
       await get().saveHoldings(updatedHoldings);
@@ -344,19 +344,9 @@ const usePortfolioStore = create((set, get) => ({
   // ============ PARA BİRİMİ ============
 
   updateExchangeRates: async () => {
-    try {
-      const response = await fetch('https://api.exchangerate-api.com/v4/latest/TRY');
-      const data = await response.json();
-      if (data.rates) {
-        set({
-          exchangeRates: {
-            USD: data.rates.USD,
-            EUR: data.rates.EUR,
-          }
-        });
-      }
-    } catch (error) {
-      console.log('Kur güncellenemedi');
+    const rates = await priceRepository.getExchangeRates('TRY');
+    if (rates) {
+      set({ exchangeRates: rates });
     }
   },
 
