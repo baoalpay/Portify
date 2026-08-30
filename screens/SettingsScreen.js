@@ -174,6 +174,7 @@ const SettingsScreen = () => {
   const settings = usePortfolioStore((state) => state.settings);
   const setCurrency = usePortfolioStore((state) => state.setCurrency);
   const isPremium = usePortfolioStore((state) => state.isPremium);
+  const togglePrivacyMode = usePortfolioStore((state) => state.togglePrivacyMode);
 
   const [modalVisible, setModalVisible] = useState(false);
   const [modalContent, setModalContent] = useState(null);
@@ -315,6 +316,31 @@ const SettingsScreen = () => {
                 onValueChange={toggleTheme}
                 trackColor={{ false: colors.border, true: primary + '60' }}
                 thumbColor={isDark ? primary : colors.textSecondary}
+              />
+            </View>
+
+            <View style={[styles.divider, { backgroundColor: colors.border }]} />
+
+            {/* Gizlilik Modu */}
+            <View style={styles.settingItem}>
+              <View style={styles.settingLeft}>
+                <View style={[styles.iconContainer, { backgroundColor: primary + '15' }]}>
+                  <Ionicons name="eye-off" size={22} color={primary} />
+                </View>
+                <View>
+                  <Text style={[styles.settingLabel, { color: colors.text }]}>
+                    Gizlilik Modu
+                  </Text>
+                  <Text style={[styles.settingSubtitle, { color: colors.textSecondary }]}>
+                    Tutarları gizle
+                  </Text>
+                </View>
+              </View>
+              <Switch
+                value={!!settings.privacyMode}
+                onValueChange={togglePrivacyMode}
+                trackColor={{ false: colors.border, true: primary + '60' }}
+                thumbColor={settings.privacyMode ? primary : colors.textSecondary}
               />
             </View>
 

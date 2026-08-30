@@ -15,6 +15,7 @@ import { LineChart } from 'react-native-chart-kit';
 import { useTheme } from '../context/ThemeContext';
 import { Spacing, BorderRadius, Typography, Shadows } from '../constants/theme';
 import usePortfolioStore from '../store/PortfolioStore';
+import PrivateValue from '../components/PrivateValue';
 
 const { width } = Dimensions.get('window');
 
@@ -411,25 +412,25 @@ const HoldingDetailScreen = ({ route, navigation }) => {
           <View style={styles.portfolioGrid}>
             <View style={styles.portfolioItem}>
               <Text style={[styles.portfolioLabel, { color: colors.textSecondary }]}>Adet</Text>
-              <Text style={[styles.portfolioValue, { color: colors.text }]}>{quantity}</Text>
+              <PrivateValue mask="•••" style={[styles.portfolioValue, { color: colors.text }]}>{quantity}</PrivateValue>
             </View>
             <View style={styles.portfolioItem}>
               <Text style={[styles.portfolioLabel, { color: colors.textSecondary }]}>Ort. Maliyet</Text>
-              <Text style={[styles.portfolioValue, { color: colors.text }]}>{formatCurrency(avgCost)}</Text>
+              <PrivateValue style={[styles.portfolioValue, { color: colors.text }]}>{formatCurrency(avgCost)}</PrivateValue>
             </View>
             <View style={styles.portfolioItem}>
               <Text style={[styles.portfolioLabel, { color: colors.textSecondary }]}>Toplam Maliyet</Text>
-              <Text style={[styles.portfolioValue, { color: colors.text }]}>{formatCurrency(totalCost)}</Text>
+              <PrivateValue style={[styles.portfolioValue, { color: colors.text }]}>{formatCurrency(totalCost)}</PrivateValue>
             </View>
             <View style={styles.portfolioItem}>
               <Text style={[styles.portfolioLabel, { color: colors.textSecondary }]}>Güncel Değer</Text>
-              <Text style={[styles.portfolioValue, { color: colors.text }]}>{formatCurrency(currentValue)}</Text>
+              <PrivateValue style={[styles.portfolioValue, { color: colors.text }]}>{formatCurrency(currentValue)}</PrivateValue>
             </View>
             <View style={styles.portfolioItem}>
               <Text style={[styles.portfolioLabel, { color: colors.textSecondary }]}>Kar/Zarar</Text>
-              <Text style={[styles.portfolioValue, { color: changeColor }]}>
-                {isPositive ? '+' : ''}{formatCurrency(profitLoss)}
-              </Text>
+              <PrivateValue style={[styles.portfolioValue, { color: changeColor }]}>
+                {`${isPositive ? '+' : ''}${formatCurrency(profitLoss)}`}
+              </PrivateValue>
             </View>
             <View style={styles.portfolioItem}>
               <Text style={[styles.portfolioLabel, { color: colors.textSecondary }]}>Getiri</Text>

@@ -24,6 +24,7 @@ const usePortfolioStore = create((set, get) => ({
   settings: {
     currency: 'TRY',
     lastUpdated: null,
+    privacyMode: false,
   },
   exchangeRates: {
     USD: 0.027,
@@ -51,6 +52,11 @@ const usePortfolioStore = create((set, get) => ({
     await settingsRepository.saveSettings(settings);
   },
 
+  // Gizlilik modunu aç/kapat (tercih kalıcıdır)
+  togglePrivacyMode: async () => {
+    await get().saveSettings({ privacyMode: !get().settings.privacyMode });
+  },
+
   // Tüm portföy verilerini sil ve store'u başlangıç durumuna döndür
   // (tema ve onboarding tercihi korunur — bkz. maintenanceRepository)
   resetAllData: async () => {
@@ -59,7 +65,7 @@ const usePortfolioStore = create((set, get) => ({
       holdings: [],
       portfolios: [DEFAULT_PORTFOLIO],
       activePortfolioId: 'default',
-      settings: { currency: 'TRY', lastUpdated: null },
+      settings: { currency: 'TRY', lastUpdated: null, privacyMode: false },
     });
   },
 

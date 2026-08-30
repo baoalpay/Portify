@@ -17,6 +17,7 @@ import usePortfolioStore from '../store/PortfolioStore';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { saveToday, getHistoryByPeriod, calculatePerformance, formatChartData } from '../services/historyService';
 import PortfolioSelector from '../components/PortfolioSelector';
+import PrivateValue from '../components/PrivateValue';
 
 const { width } = Dimensions.get('window');
 
@@ -41,6 +42,8 @@ const PortfolioScreen = () => {
   const settings = usePortfolioStore((state) => state.settings);
   const convertCurrency = usePortfolioStore((state) => state.convertCurrency);
   const getCurrencySymbol = usePortfolioStore((state) => state.getCurrencySymbol);
+  const privacyMode = usePortfolioStore((state) => !!state.settings.privacyMode);
+  const togglePrivacyMode = usePortfolioStore((state) => state.togglePrivacyMode);
   
   const [refreshing, setRefreshing] = useState(false);
   const [chartType, setChartType] = useState('pie');
@@ -202,7 +205,13 @@ const PortfolioScreen = () => {
           </View>
           <View style={styles.headerRight}>
             <PortfolioSelector />
-            <TouchableOpacity 
+            <TouchableOpacity
+              style={[styles.refreshButton, { backgroundColor: colors.surface }]}
+              onPress={togglePrivacyMode}
+            >
+              <Ionicons name={privacyMode ? 'eye-off' : 'eye'} size={20} color={primary} />
+            </TouchableOpacity>
+            <TouchableOpacity
               style={[styles.refreshButton, { backgroundColor: colors.surface }]}
               onPress={onRefresh}
             >
@@ -217,9 +226,9 @@ const PortfolioScreen = () => {
             <Text style={[styles.cardLabel, { color: colors.textSecondary }]}>
               Toplam Portföy Değeri
             </Text>
-            <Text style={[styles.totalValue, { color: colors.text }]}>
+            <PrivateValue style={[styles.totalValue, { color: colors.text }]}>
               {formatCurrency(portfolio.totalValue)}
-            </Text>
+            </PrivateValue>
             
             <View style={[styles.profitBadge, { backgroundColor: profitColor + '15' }]}>
               <Ionicons 
@@ -227,9 +236,9 @@ const PortfolioScreen = () => {
                 size={18} 
                 color={profitColor} 
               />
-              <Text style={[styles.profitAmount, { color: profitColor }]}>
+              <PrivateValue style={[styles.profitAmount, { color: profitColor }]}>
                 {formatCurrency(portfolio.profitLoss)}
-              </Text>
+              </PrivateValue>
               <Text style={[styles.profitPercent, { color: profitColor }]}>
                 ({formatPercent(portfolio.profitLossPercent)})
               </Text>
@@ -240,17 +249,17 @@ const PortfolioScreen = () => {
             <View style={[styles.statBox, { backgroundColor: colors.background }]}>
               <Ionicons name="wallet-outline" size={20} color={colors.textSecondary} />
               <Text style={[styles.statBoxLabel, { color: colors.textSecondary }]}>Maliyet</Text>
-              <Text style={[styles.statBoxValue, { color: colors.text }]}>
+              <PrivateValue style={[styles.statBoxValue, { color: colors.text }]}>
                 {formatCurrency(portfolio.totalCost, true)}
-              </Text>
+              </PrivateValue>
             </View>
             
             <View style={[styles.statBox, { backgroundColor: colors.background }]}>
               <Ionicons name="analytics-outline" size={20} color={colors.textSecondary} />
               <Text style={[styles.statBoxLabel, { color: colors.textSecondary }]}>Güncel</Text>
-              <Text style={[styles.statBoxValue, { color: colors.text }]}>
+              <PrivateValue style={[styles.statBoxValue, { color: colors.text }]}>
                 {formatCurrency(portfolio.totalValue, true)}
-              </Text>
+              </PrivateValue>
             </View>
             
             <View style={[styles.statBox, { backgroundColor: colors.background }]}>
@@ -312,11 +321,17 @@ const PortfolioScreen = () => {
                       size={20} 
                       color={performance.isPositive ? colors.success : colors.error} 
                     />
-                    <Text style={[
-                      styles.performanceValue, 
+                    <PrivateValue style={[
+                      styles.performanceValue,
                       { color: performance.isPositive ? colors.success : colors.error }
                     ]}>
-                      {formatCurrency(performance.change)} ({formatPercent(performance.changePercent)})
+                      {formatCurrency(performance.change)}
+                    </PrivateValue>
+                    <Text style={[
+                      styles.performanceValue,
+                      { color: performance.isPositive ? colors.success : colors.error }
+                    ]}>
+                      ({formatPercent(performance.changePercent)})
                     </Text>
                   </View>
                 </View>
@@ -335,7 +350,7 @@ const PortfolioScreen = () => {
                   withInnerLines={true}
                   withOuterLines={false}
                   withVerticalLabels={true}
-                  withHorizontalLabels={true}
+                  withHorizontalLabels={!privacyMode}
                   fromZero={false}
                   formatYLabel={(value) => {
                     const num = parseFloat(value);
@@ -414,7 +429,7 @@ const PortfolioScreen = () => {
                       <View style={[styles.legendDot, { backgroundColor: item.color }]} />
                       <Text style={[styles.legendName, { color: colors.text }]}>{item.name}</Text>
                       <Text style={[styles.legendPercent, { color: colors.textSecondary }]}>%{item.percent}</Text>
-                      <Text style={[styles.legendValue, { color: colors.text }]}>{formatCurrency(item.value, true)}</Text>
+                      <PrivateValue style={[styles.legendValue, { color: colors.text }]}>{formatCurrency(item.value, true)}</PrivateValue>
                     </View>
                   ))}
                 </View>
@@ -431,7 +446,7 @@ const PortfolioScreen = () => {
                         <View style={[styles.legendDot, { backgroundColor: item.color }]} />
                         <Text style={[styles.barName, { color: colors.text }]}>{item.name}</Text>
                       </View>
-                      <Text style={[styles.barValue, { color: colors.text }]}>{formatCurrency(item.value, true)}</Text>
+                      <PrivateValue style={[styles.barValue, { color: colors.text }]}>{formatCurrency(item.value, true)}</PrivateValue>
                     </View>
                     <View style={[styles.barTrack, { backgroundColor: colors.border }]}>
                       <View style={[styles.barFill, { backgroundColor: item.color, width: `${item.percent}%` }]} />
@@ -459,7 +474,7 @@ const PortfolioScreen = () => {
                       <Text style={[styles.listName, { color: colors.text }]}>{item.name}</Text>
                       <Text style={[styles.listPercent, { color: colors.textSecondary }]}>%{item.percent}</Text>
                     </View>
-                    <Text style={[styles.listValue, { color: colors.text }]}>{formatCurrency(item.value)}</Text>
+                    <PrivateValue style={[styles.listValue, { color: colors.text }]}>{formatCurrency(item.value)}</PrivateValue>
                   </View>
                 ))}
               </View>
@@ -513,9 +528,9 @@ const PortfolioScreen = () => {
                         {item.symbol}
                       </Text>
                       <View style={styles.profitLossValues}>
-                        <Text style={[styles.profitLossAmount, { color: barColor }]}>
-                          {isProfit ? '+' : ''}{formatCurrency(item.profitLoss, true)}
-                        </Text>
+                        <PrivateValue style={[styles.profitLossAmount, { color: barColor }]}>
+                          {`${isProfit ? '+' : ''}${formatCurrency(item.profitLoss, true)}`}
+                        </PrivateValue>
                         <Text style={[styles.profitLossPercent, { color: barColor }]}>
                           ({isProfit ? '+' : ''}{item.profitLossPercent.toFixed(1)}%)
                         </Text>

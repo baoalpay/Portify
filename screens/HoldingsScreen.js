@@ -20,6 +20,7 @@ import { useFocusEffect } from '@react-navigation/native';
 import Swipeable from 'react-native-gesture-handler/Swipeable';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { checkPriceAlerts, loadAlerts } from '../services/notificationService';
+import PrivateValue from '../components/PrivateValue';
 
 const SORT_OPTIONS = [
   { key: 'type', label: 'Türe Göre', icon: 'layers-outline' },
@@ -307,7 +308,7 @@ const HoldingsScreen = ({ navigation }) => {
                 </View>
               </View>
               <View style={styles.cardRight}>
-                <Text style={[styles.holdingValue, { color: colors.text }]}>{formatCurrency(value)}</Text>
+                <PrivateValue style={[styles.holdingValue, { color: colors.text }]}>{formatCurrency(value)}</PrivateValue>
                 <View style={[styles.profitBadge, { backgroundColor: profitLoss >= 0 ? colors.success + '15' : colors.error + '15' }]}>
                   <Text style={[styles.profitText, { color: profitLoss >= 0 ? colors.success : colors.error }]}>{profitLoss >= 0 ? '+' : ''}{profitLossPercent.toFixed(2)}%</Text>
                 </View>
@@ -315,8 +316,8 @@ const HoldingsScreen = ({ navigation }) => {
             </View>
             <View style={[styles.divider, { backgroundColor: colors.border }]} />
             <View style={styles.cardFooter}>
-              <View style={styles.footerItem}><Text style={[styles.footerLabel, { color: colors.textSecondary }]}>Adet/Miktar</Text><Text style={[styles.footerValue, { color: colors.text }]}>{holding.quantity}</Text></View>
-              <View style={styles.footerItem}><Text style={[styles.footerLabel, { color: colors.textSecondary }]}>Ort. Maliyet</Text><Text style={[styles.footerValue, { color: colors.text }]}>{formatCurrency(holding.avgCost)}</Text></View>
+              <View style={styles.footerItem}><Text style={[styles.footerLabel, { color: colors.textSecondary }]}>Adet/Miktar</Text><PrivateValue mask="•••" style={[styles.footerValue, { color: colors.text }]}>{holding.quantity}</PrivateValue></View>
+              <View style={styles.footerItem}><Text style={[styles.footerLabel, { color: colors.textSecondary }]}>Ort. Maliyet</Text><PrivateValue style={[styles.footerValue, { color: colors.text }]}>{formatCurrency(holding.avgCost)}</PrivateValue></View>
               <View style={styles.footerItem}><Text style={[styles.footerLabel, { color: colors.textSecondary }]}>Güncel Fiyat</Text><Text style={[styles.footerValue, { color: colors.text }]}>{formatCurrency(currentPrice)}</Text></View>
             </View>
             {hasActiveAlert && (
