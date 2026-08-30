@@ -159,7 +159,7 @@ Bu gizlilik politikası zaman zaman güncellenebilir. Önemli değişiklikler uy
 
 9. İLETİŞİM
 
-Gizlilik ile ilgili sorularınız için: portify@example.com`
+Gizlilik ile ilgili sorularınız için: baoalpay@gmail.com`
   }
 };
 
