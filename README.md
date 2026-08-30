@@ -1,100 +1,81 @@
-# 📊 Portify
+# Portify
 
-**Yatırımlarını tek yerden yönet.**
+Birikimlerim dağınıktı: borsada birkaç hisse, bir iki fon, biraz kripto, bir miktar altın.
+Hepsinin o an ne ettiğini görmek için dört ayrı uygulama açmak gerekiyordu. Bunun için
+kendime bir portföy takip uygulaması yazdım; belki başkasının da işine yarar diye açık
+kaynak yapıyorum.
 
-Portify; hisse senedi (BIST), yatırım fonu, kripto para, döviz, altın ve gümüş varlıklarınızı
-tek bir uygulamadan takip etmenizi sağlayan, React Native + Expo ile geliştirilmiş açık kaynak
-bir mobil portföy takip uygulamasıdır.
+Portify, React Native ve Expo ile yazılmış bir mobil uygulama. BIST hisseleri, fonlar,
+kripto, döviz, altın ve gümüş varlıklarınızı elle giriyorsunuz; uygulama güncel fiyatları
+çekip toplam değeri, kar/zararı ve dağılımı gösteriyor.
 
-Tüm verileriniz **yalnızca cihazınızda** saklanır — sunucu yok, üyelik yok, veri toplama yok.
-Fiyatlar ücretsiz ve anahtarsız halka açık API'lerden çekilir.
+İki tasarım tercihim var: uygulamanın sunucusu yok, verileriniz yalnızca telefonunuzda
+duruyor. Fiyatlar da anahtar gerektirmeyen açık servislerden geliyor (Yahoo Finance,
+CoinGecko, ExchangeRate API) — yani üye olmanız gereken, verinizi gönderen hiçbir şey yok.
 
-> ⚠️ Bu uygulama yatırım tavsiyesi vermez. Fiyatlar üçüncü taraf kaynaklardan alınır ve
-> gecikmeli veya hatalı olabilir.
+Bu bir hobi projesi, yatırım tavsiyesi vermez. Fiyatlar gecikmeli veya hatalı olabilir.
 
-## Ekran Görüntüleri
+## Kurulum
 
-<!-- TODO: Ekran görüntülerini ekleyin -->
-| Portföy | Varlıklarım | Varlık Ekle | Ayarlar |
-|---|---|---|---|
-| ![Portföy](docs/screenshots/portfolio.png) | ![Varlıklarım](docs/screenshots/holdings.png) | ![Varlık Ekle](docs/screenshots/add-holding.png) | ![Ayarlar](docs/screenshots/settings.png) |
-
-## ✨ Özellikler
-
-- **6 varlık türü:** BIST hisseleri, fonlar, kripto, döviz (20 para birimi), altın, gümüş
-- **Otomatik fiyat güncelleme:** Yahoo Finance, CoinGecko ve ExchangeRate API'lerinden (5 dk önbellekli)
-- **Portföy özeti:** toplam değer, maliyet, kar/zarar ve getiri yüzdesi
-- **Grafikler:** varlık dağılımı (pasta/çubuk/liste), günlük kayıtlara dayalı performans grafiği, hisse detay grafikleri
-- **Çoklu portföy:** portföy oluşturma, düzenleme ve varlıkları portföyler arası taşıma
-- **Akıllı ekleme:** aynı varlığı tekrar eklerseniz adetler toplanır, ağırlıklı ortalama maliyet hesaplanır
-- **Sıralama ve arama:** türe, değere, kar/zarara göre sıralama; sembol/ada göre arama
-- **Hedef fiyat alarmı:** "üstüne çıkarsa / altına düşerse" hedefleri (şimdilik uygulama içi gösterge — bkz. Bilinen Eksikler)
-- **Kişiselleştirme:** karanlık/aydınlık mod, 8 tema rengi, ₺/$/€ para birimi seçimi
-- **Gizlilik odaklı:** tüm veriler cihazda (AsyncStorage), hiçbir sunucuya veri gönderilmez
-
-## 🚀 Kurulum
-
-Gereksinimler: [Node.js](https://nodejs.org) (LTS) ve telefonunuzda [Expo Go](https://expo.dev/go)
-uygulaması (veya bir Android/iOS emülatörü).
+[Node.js](https://nodejs.org) ve telefonunuzda [Expo Go](https://expo.dev/go) yeterli:
 
 ```bash
-# Repoyu klonlayın
 git clone https://github.com/baoalpay/Portify.git
 cd Portify
-
-# Bağımlılıkları yükleyin
 npm install
-
-# Geliştirme sunucusunu başlatın
 npx expo start
 ```
 
-Terminalde çıkan QR kodu telefonunuzdaki Expo Go ile okutun (bilgisayar ve telefon aynı
-Wi-Fi ağında olmalı). Emülatör için terminalde `a` (Android) veya `i` (iOS, yalnızca macOS)
-tuşuna basın.
+Terminalde çıkan QR kodu Expo Go ile okutun (telefon ve bilgisayar aynı ağda olmalı).
+API anahtarı ya da `.env` dosyası gerekmiyor.
 
-API anahtarı veya `.env` dosyası **gerekmez** — kullanılan tüm fiyat servisleri anahtarsızdır.
+## Geliştirme (Android emülatörü ile)
 
-## 🛠 Kullanılan Teknolojiler
+Ben geliştirmeyi Expo Go yerine Android emülatöründe, development build ile yapıyorum
+(ileride AdMob gibi native modüller ekleneceği için Expo Go yetmiyor).
 
-| Teknoloji | Kullanım amacı |
-|---|---|
-| [React Native](https://reactnative.dev) 0.81 + [Expo](https://expo.dev) SDK 54 | Mobil uygulama çatısı |
-| [React](https://react.dev) 19 | Arayüz bileşenleri |
-| [Zustand](https://zustand-demo.pmnd.rs) | Durum (state) yönetimi |
-| [React Navigation](https://reactnavigation.org) v7 | Sekme + stack navigasyonu |
-| [AsyncStorage](https://react-native-async-storage.github.io/async-storage/) | Cihaz içi kalıcı depolama |
-| [react-native-chart-kit](https://github.com/indiespirit/react-native-chart-kit) | Pasta ve çizgi grafikleri |
-| [react-native-gesture-handler](https://docs.swmansion.com/react-native-gesture-handler/) | Kaydırmalı kart aksiyonları |
-| Yahoo Finance, CoinGecko, ExchangeRate API | Fiyat verileri (ücretsiz, anahtarsız) |
+Bir kez kurulması gerekenler: Android Studio + Android SDK, bir sanal cihaz (AVD)
+ve JDK 17. `JAVA_HOME` ile `ANDROID_HOME` ortam değişkenleri SDK ve JDK yollarını
+göstermeli, `platform-tools` ile `emulator` klasörleri PATH'te olmalı.
 
-Mimari detayları için: [docs/MIMARI.md](docs/MIMARI.md)
+Günlük geliştirme için tek komut:
 
-## 🚧 Bilinen Eksikler
+```bash
+npx expo run:android
+```
 
-Proje aktif geliştirme aşamasındadır; aşağıdaki konular henüz tamamlanmamıştır:
+Bu komut emülatör kapalıysa açar, uygulamayı derleyip kurar ve Metro sunucusunu
+başlatır. İlk derleme uzun sürer (5-15 dk); sonrakiler native kod değişmediyse
+çok daha hızlıdır. Kod kaydedildiğinde uygulama emülatörde otomatik yenilenir.
 
-- **Bildirimler gerçek değil:** Hedef fiyat alarmı kurulabilir ancak telefon bildirimi
-  gönderilmez; alarm yalnızca uygulama açıkken varlık kartı üzerinde gösterilir.
-  (`expo-notifications` paketi yüklü fakat henüz bağlanmadı.)
-- **Premium sistemi bağlı değil:** Kodda Premium kilitleri (çoklu portföy, tema renkleri,
-  transfer) kurgulanmış durumda ama satın alma akışı yok; `isPremium` sabit `true` olduğundan
-  tüm özellikler şu an herkese açık.
-- **Gümüş fiyatı çekilmiyor:** Gümüş için fiyat API'si bağlanmadı; güncel fiyat maliyetle aynı
-  varsayılır ve kar/zarar hep 0 görünür.
-- **`loadSettings` hatası:** `App.js` açılışta store'da tanımlı olmayan bir `loadSettings`
-  fonksiyonu çağırıyor; açılıştaki ilk otomatik veri yükleme zinciri bu yüzden kesiliyor
-  (ekranlar odaklanınca veriyi kendileri yüklediği için uygulama çalışmaya devam ediyor).
-- Ayrıca: varlık detayındaki grafik hisse dışındaki türlerde temsili (rastgele) veridir,
-  fon fiyatları manuel girilir, otomatik güncelleme aralığı için ayar arayüzü yoktur ve
-  "Tüm Verileri Sil" yalnızca varsayılan portföyün varlıklarını siler.
+## Neler var
 
-Katkıda bulunmak isterseniz bu maddeler iyi birer başlangıç noktasıdır. 🙌
+Çoklu portföy, varlıklar arası transfer, tür/değer/kar-zarara göre sıralama, arama,
+pasta ve çizgi grafikler, günlük performans geçmişi, karanlık ve aydınlık tema,
+₺/$/€ para birimi seçimi, hedef fiyat alarmı tanımlama.
 
-## 📄 Lisans
+Mimari ve veri akışının ayrıntısı için: [docs/MIMARI.md](docs/MIMARI.md).
+Devam eden yeniden tasarım planı: [docs/YENIDEN-TASARIM.md](docs/YENIDEN-TASARIM.md).
 
-Bu proje [MIT Lisansı](LICENSE) ile lisanslanmıştır.
+## Bilinen eksikler
 
-## 📬 İletişim
+Dürüst olmak gerekirse henüz bitmemiş yerler var:
 
-Sorularınız için: baoalpay@gmail.com
+- Fiyat alarmı kurabiliyorsunuz ama telefon bildirimi gelmiyor; alarm şimdilik sadece
+  uygulama içinde işaret olarak görünüyor.
+- Varlık detayındaki grafik yalnızca hisselerde gerçek veri kullanıyor; diğer türlerde
+  temsili. Bunu ya gerçek veriye bağlayacağım ya da grafiği kaldıracağım.
+- Gümüş için fiyat kaynağı bağlamadım, fon fiyatları da elle giriliyor (TEFAS entegrasyonu
+  planda).
+- Kodda bir Premium kurgusu var ama satın alma sistemi bağlı değil; şu an her özellik
+  herkese açık.
+- Açılışta çağrılan `loadSettings` fonksiyonu store'da tanımlı değil — bu yüzden para
+  birimi tercihi uygulama kapanınca kayboluyor. Sıradaki düzeltme bu.
+
+Katkı vermek isterseniz bu maddeler iyi birer başlangıç noktası.
+
+## Lisans
+
+[MIT](LICENSE)
+
+Sorular için: baoalpay@gmail.com
