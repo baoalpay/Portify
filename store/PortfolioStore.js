@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { updateAllPrices } from '../services/priceService';
 import { portfolioRepository } from '../repositories/portfolioRepository';
 import { holdingsRepository } from '../repositories/holdingsRepository';
+import { settingsRepository } from '../repositories/settingsRepository';
 
 // Varsayılan portföy
 const DEFAULT_PORTFOLIO = {
@@ -26,6 +27,27 @@ const usePortfolioStore = create((set, get) => ({
   exchangeRates: {
     USD: 0.027,
     EUR: 0.026,
+  },
+
+  // ============ AYARLAR ============
+
+  // Kayıtlı ayarları yükle (App.js açılışta çağırır)
+  loadSettings: async () => {
+    try {
+      const stored = await settingsRepository.loadSettings();
+      if (stored) {
+        set({ settings: { ...get().settings, ...stored } });
+      }
+    } catch (error) {
+      console.error('Ayarlar yüklenemedi:', error);
+    }
+  },
+
+  // Ayar değişikliğini hem store'a hem kalıcı depoya yaz
+  saveSettings: async (updates) => {
+    const settings = { ...get().settings, ...updates };
+    set({ settings });
+    await settingsRepository.saveSettings(settings);
   },
 
   // ============ PORTFÖY YÖNETİMİ ============
@@ -298,10 +320,8 @@ const usePortfolioStore = create((set, get) => ({
 
     try {
       const updatedHoldings = await updateAllPrices(holdings);
-      set({ 
-        holdings: updatedHoldings,
-        settings: { ...get().settings, lastUpdated: new Date().toISOString() }
-      });
+      set({ holdings: updatedHoldings });
+      await get().saveSettings({ lastUpdated: new Date().toISOString() });
       await get().saveHoldings(updatedHoldings);
     } catch (error) {
       console.error('Fiyat güncelleme hatası:', error);
@@ -328,7 +348,7 @@ const usePortfolioStore = create((set, get) => ({
   },
 
   setCurrency: async (currency) => {
-    set({ settings: { ...get().settings, currency } });
+    await get().saveSettings({ currency });
     if (currency !== 'TRY') {
       await get().updateExchangeRates();
     }
