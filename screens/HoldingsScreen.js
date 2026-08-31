@@ -318,7 +318,7 @@ const HoldingsScreen = ({ navigation }) => {
             <View style={styles.cardFooter}>
               <View style={styles.footerItem}><Text style={[styles.footerLabel, { color: colors.textSecondary }]}>Adet/Miktar</Text><PrivateValue mask="•••" style={[styles.footerValue, { color: colors.text }]}>{holding.quantity}</PrivateValue></View>
               <View style={styles.footerItem}><Text style={[styles.footerLabel, { color: colors.textSecondary }]}>Ort. Maliyet</Text><PrivateValue style={[styles.footerValue, { color: colors.text }]}>{formatCurrency(holding.avgCost)}</PrivateValue></View>
-              <View style={styles.footerItem}><Text style={[styles.footerLabel, { color: colors.textSecondary }]}>Güncel Fiyat</Text><Text style={[styles.footerValue, { color: colors.text }]}>{formatCurrency(currentPrice)}</Text></View>
+              <View style={styles.footerItem}><Text style={[styles.footerLabel, { color: holding.type === 'fund' && holding.priceStale ? '#F59E0B' : colors.textSecondary }]}>{holding.type === 'fund' && holding.priceStale ? 'Fiyat güncellenemedi' : 'Güncel Fiyat'}</Text><Text style={[styles.footerValue, { color: colors.text }]}>{formatCurrency(currentPrice)}</Text></View>
             </View>
             {hasActiveAlert && (
               <View style={[styles.alertIndicator, { backgroundColor: primary + '10', borderColor: primary + '30' }]}>

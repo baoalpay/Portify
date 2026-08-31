@@ -10,6 +10,8 @@ export const StorageKeys = {
   holdingsPrefix: 'portify_holdings_',          // diğer portföyler: portify_holdings_<id>
   history: 'portify_history',
   alerts: 'portify_price_alerts',
+  tefasPrices: 'portify_tefas_prices',        // fon başına son bilinen TEFAS fiyatı
+  tefasFundList: 'portify_tefas_fund_list',   // aranabilir fon listesi önbelleği
   onboarding: 'portify_onboarding_completed',
   theme: 'theme',
   themeColor: 'theme_color',

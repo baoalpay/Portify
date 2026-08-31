@@ -14,6 +14,7 @@ import { useTheme } from '../context/ThemeContext';
 import { Spacing, BorderRadius, Typography, Shadows } from '../constants/theme';
 import usePortfolioStore from '../store/PortfolioStore';
 import { setAlert, getAlert, requestNotificationPermissions } from '../services/notificationService';
+import { tefasRepository } from '../repositories/tefasRepository';
 
 const CURRENCY_LIST = [
   { code: 'USD', name: 'Amerikan Doları' },
@@ -54,9 +55,25 @@ const AddHoldingScreen = ({ navigation, route }) => {
     currentPrice: editMode && existingHolding.currentPrice ? existingHolding.currentPrice.toString() : '',
   });
   
-  const [currencySearch, setCurrencySearch] = useState(editMode && existingHolding.type === 'currency' ? 
+  const [currencySearch, setCurrencySearch] = useState(editMode && existingHolding.type === 'currency' ?
     CURRENCY_LIST.find(c => c.code === existingHolding.symbol)?.name || '' : '');
   const [showCurrencyList, setShowCurrencyList] = useState(false);
+
+  // Fon arama (liste TEFAS'tan bir kez çekilip önbelleklenir; liste yoksa
+  // düz kod girişi çalışmaya devam eder — manuel yol birinci sınıftır)
+  const [fundList, setFundList] = useState(null);
+  const [showFundList, setShowFundList] = useState(false);
+  const [fundFullName, setFundFullName] = useState(
+    editMode && existingHolding?.type === 'fund' ? existingHolding.fullName || '' : ''
+  );
+
+  useEffect(() => {
+    if (selectedType === 'fund' && fundList === null && !editMode) {
+      tefasRepository.getFundList().then((funds) => {
+        if (funds) setFundList(funds);
+      });
+    }
+  }, [selectedType]);
 
   // Hedef fiyat state'leri
   const [targetEnabled, setTargetEnabled] = useState(false);
@@ -98,13 +115,17 @@ const AddHoldingScreen = ({ navigation, route }) => {
 
   const handleSave = async () => {
     let holdingId = existingHolding?.id;
-    
+
+    const resolvedFullName = selectedType === 'fund' && fundFullName
+      ? fundFullName
+      : formData.symbol || (selectedType === 'gold' ? 'Altın' : selectedType === 'silver' ? 'Gümüş' : formData.symbol);
+
     if (editMode) {
       const updates = {
-        symbol: noSymbolRequired 
-          ? (selectedType === 'gold' ? 'GOLD' : 'SILVER') 
+        symbol: noSymbolRequired
+          ? (selectedType === 'gold' ? 'GOLD' : 'SILVER')
           : formData.symbol,
-        fullName: formData.symbol || (selectedType === 'gold' ? 'Altın' : selectedType === 'silver' ? 'Gümüş' : formData.symbol),
+        fullName: resolvedFullName,
         quantity: formData.quantity,
         avgCost: formData.avgCost,
       };
@@ -118,10 +139,10 @@ const AddHoldingScreen = ({ navigation, route }) => {
     } else {
       const holding = {
         type: selectedType,
-        symbol: noSymbolRequired 
-          ? (selectedType === 'gold' ? 'GOLD' : 'SILVER') 
+        symbol: noSymbolRequired
+          ? (selectedType === 'gold' ? 'GOLD' : 'SILVER')
           : formData.symbol,
-        fullName: formData.symbol || (selectedType === 'gold' ? 'Altın' : selectedType === 'silver' ? 'Gümüş' : formData.symbol),
+        fullName: resolvedFullName,
         quantity: formData.quantity,
         avgCost: formData.avgCost,
       };
@@ -169,7 +190,7 @@ const AddHoldingScreen = ({ navigation, route }) => {
 
   const getPriceHint = () => {
     if (selectedType === 'fund') {
-      return 'Fon fiyatlarını tefas.gov.tr adresinden öğrenebilirsiniz';
+      return 'Fiyat, TEFAS\'tan günde bir kez otomatik güncellenir. Girdiğiniz fiyat, TEFAS\'a ulaşılamadığında kullanılır.';
     }
     return '';
   };
@@ -177,12 +198,12 @@ const AddHoldingScreen = ({ navigation, route }) => {
   const getInfoText = () => {
     if (editMode) {
       if (needsManualPrice) {
-        return 'Fon fiyatları manuel güncellenir. Güncel fiyatı girerek portföyünüzü takip edin.';
+        return 'Fon fiyatı TEFAS\'tan günlük çekilir; dilerseniz güncel fiyatı elle de girebilirsiniz.';
       }
       return 'Varlık bilgilerinizi güncelleyin. Sembol değiştirilemez.';
     } else {
       if (needsManualPrice) {
-        return 'Fon fiyatları API\'den çekilemediği için güncel fiyatı manuel girmeniz gerekiyor.';
+        return 'Fon adı veya koduyla arama yapabilirsiniz. Fiyat TEFAS\'tan günlük güncellenir; girdiğiniz fiyat yedek olarak kullanılır.';
       }
       return 'Güncel fiyatlar otomatik olarak güncellenecektir. Sadece maliyet bilgilerinizi girin.';
     }
@@ -301,17 +322,48 @@ const AddHoldingScreen = ({ navigation, route }) => {
                 </Text>
                 <TextInput
                   style={[
-                    styles.input, 
+                    styles.input,
                     { backgroundColor: colors.surface, color: colors.text, borderColor: colors.border },
                     editMode && styles.inputDisabled
                   ]}
                   placeholder={labels.placeholder}
                   placeholderTextColor={colors.textSecondary}
                   value={formData.symbol}
-                  onChangeText={(text) => setFormData({ ...formData, symbol: text.toUpperCase() })}
+                  onChangeText={(text) => {
+                    setFormData({ ...formData, symbol: text.toUpperCase() });
+                    if (selectedType === 'fund') {
+                      setShowFundList(true);
+                      setFundFullName('');
+                    }
+                  }}
+                  onFocus={() => selectedType === 'fund' && !editMode && setShowFundList(true)}
                   autoCapitalize="characters"
                   editable={!editMode}
                 />
+                {selectedType === 'fund' && fundFullName !== '' && (
+                  <Text style={[styles.fundNameHint, { color: colors.textSecondary }]} numberOfLines={1}>
+                    {fundFullName}
+                  </Text>
+                )}
+                {selectedType === 'fund' && showFundList && !editMode && fundList &&
+                  formData.symbol.length > 0 && fundFullName === '' && (
+                  <View style={[styles.currencyList, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+                    {tefasRepository.searchFunds(formData.symbol, fundList).map((fund) => (
+                      <TouchableOpacity
+                        key={fund.code}
+                        style={[styles.currencyItem, { borderBottomColor: colors.border }]}
+                        onPress={() => {
+                          setFormData({ ...formData, symbol: fund.code });
+                          setFundFullName(fund.name);
+                          setShowFundList(false);
+                        }}
+                      >
+                        <Text style={[styles.currencyCode, { color: colors.text }]}>{fund.code}</Text>
+                        <Text style={[styles.currencyName, { color: colors.textSecondary }]} numberOfLines={1}>{fund.name}</Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                )}
               </View>
             )}
 
@@ -580,6 +632,11 @@ const styles = StyleSheet.create({
   },
   inputDisabled: {
     opacity: 0.6,
+  },
+  fundNameHint: {
+    ...Typography.caption,
+    marginTop: Spacing.xs,
+    marginLeft: Spacing.xs,
   },
   currencyList: {
     borderWidth: 1,

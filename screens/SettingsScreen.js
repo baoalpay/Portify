@@ -175,6 +175,7 @@ const SettingsScreen = () => {
   const setCurrency = usePortfolioStore((state) => state.setCurrency);
   const isPremium = usePortfolioStore((state) => state.isPremium);
   const togglePrivacyMode = usePortfolioStore((state) => state.togglePrivacyMode);
+  const saveSettings = usePortfolioStore((state) => state.saveSettings);
 
   const [modalVisible, setModalVisible] = useState(false);
   const [modalContent, setModalContent] = useState(null);
@@ -411,6 +412,40 @@ const SettingsScreen = () => {
               </View>
             </View>
           </View>
+        </View>
+
+        {/* Fiyat Kaynakları */}
+        <View style={styles.group}>
+          <Text style={[styles.groupTitle, { color: colors.textSecondary }]}>
+            FİYAT KAYNAKLARI
+          </Text>
+          <View style={[styles.groupCard, { backgroundColor: colors.surface }]}>
+            <View style={styles.settingItem}>
+              <View style={styles.settingLeft}>
+                <View style={[styles.iconContainer, { backgroundColor: primary + '15' }]}>
+                  <Ionicons name="cloud-download-outline" size={22} color={primary} />
+                </View>
+                <View>
+                  <Text style={[styles.settingLabel, { color: colors.text }]}>
+                    TEFAS'tan otomatik fiyat çek
+                  </Text>
+                  <Text style={[styles.settingSubtitle, { color: colors.textSecondary }]}>
+                    Kapalıyken fon fiyatları elle girilir
+                  </Text>
+                </View>
+              </View>
+              <Switch
+                value={settings.tefasEnabled !== false}
+                onValueChange={() => saveSettings({ tefasEnabled: !(settings.tefasEnabled !== false) })}
+                trackColor={{ false: colors.border, true: primary + '60' }}
+                thumbColor={settings.tefasEnabled !== false ? primary : colors.textSecondary}
+              />
+            </View>
+          </View>
+          <Text style={[styles.groupFootnote, { color: colors.textSecondary }]}>
+            Fon fiyatlarının kaynağı Takasbank TEFAS'tır. Fon fiyatları günde bir kez
+            hesaplanır ve ertesi iş günü açıklanır; anlık değildir.
+          </Text>
         </View>
 
         {/* Veri Yönetimi */}
@@ -698,6 +733,12 @@ const styles = StyleSheet.create({
   groupCard: {
     borderRadius: BorderRadius.lg,
     overflow: 'hidden',
+  },
+  groupFootnote: {
+    ...Typography.caption,
+    marginTop: Spacing.xs,
+    marginHorizontal: Spacing.xs,
+    lineHeight: 16,
   },
   settingItem: {
     flexDirection: 'row',

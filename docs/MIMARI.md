@@ -254,3 +254,58 @@ Sonra:
 
 Not: Fiyatların gelmesi için internet bağlantısı gerekir; herhangi bir API anahtarı ya da
 `.env` dosyası **gerekmez** (tüm servisler anahtarsız ve ücretsizdir).
+
+---
+
+## 7. TEFAS Bağımlılığı (bakım notu — kırılırsa buradan başla)
+
+> Son güncelleme: 30 Ağustos 2026. Fon fiyatları TEFAS'ın **gayriresmî** iç
+> servisinden çekiliyor. TEFAS resmî API sunmuyor (SSS'lerinde açıkça
+> "kurumsal politika gereği API paylaşımı yapılmamaktadır" yazıyor).
+
+### Nereye bakılır?
+
+**TEFAS'a dokunan TÜM kod tek dosyada: `repositories/tefasRepository.js`.**
+Fon fiyatı gelmiyorsa önce o dosyadaki uç noktayı ve istek gövdesini kontrol et;
+başka hiçbir dosyada TEFAS bilgisi yoktur.
+
+### Kullanılan uç nokta (30.08.2026 itibarıyla çalışıyor)
+
+- `POST https://www.tefas.gov.tr/api/funds/fonGnlBlgSiraliGetir`
+- Gövde (JSON): `fonTipi: "YAT"`, `fonKodu: "NNF" | null`, `basTarih`/`bitTarih`
+  (**yyyyMMdd** formatında, ör. `20260828`), `basSira: 1`, `bitSira: 100000`, `dil: "TR"`
+  + sitenin gönderdiği boş alanlar (dosyada hazır şablon var)
+- Header: `Content-Type: application/json`, `Origin/Referer: tefas.gov.tr`
+- Yanıt: `resultList` dizisi; önemli alanlar `fonKodu`, `fonUnvan`, `tarih`
+  (yyyy-MM-dd), **`fiyat`** (TL birim pay değeri)
+- `fonKodu: null` gönderilirse TÜM fonların listesi döner (arama önbelleği bundan beslenir)
+
+### Bilinen riskler ve gözlenmiş davranışlar
+
+1. **Uç nokta habersiz değişebilir.** Nisan 2026'da site Next.js'e taşındı ve eski
+   `/api/DB/BindHistoryInfo` uç noktası kapatıldı ("Method not found or disabled"
+   dönüyor) — tüm üçüncü parti kütüphaneler kırıldı. Aynısı yine olabilir.
+2. **Hız sınırı: ~6 istek/dakika.** Aşınca IP birkaç dakika bağlantı düşürme
+   cezası alıyor (curl'de `exit code 000`/ECONNRESET olarak görünür). Bu yüzden
+   dosyada istekler arası 10 sn zorunlu bekleme ve günde-bir-istek önbelleği var.
+3. **Tek istekte en çok ~1 aylık aralık** dönüyor (biz zaten 4-8 günlük soruyoruz).
+4. **Hukuki durum gri:** veri Takasbank'ın; ticari kullanım için açık izin yok,
+   bilinen yaptırım örneği de yok. Uygulama ciddi gelir üretirse Takasbank'la
+   lisans görüşülmeli.
+
+### Kırılırsa uygulama ne yapar?
+
+Hiçbir şey çökmez: `getFundPrice` asla hata fırlatmaz; son bilinen fiyat
+(`portify_tefas_prices` anahtarında) `stale: true` işaretiyle döner, o da yoksa
+kullanıcının elle girdiği fiyat kullanılır (manuel giriş birinci sınıf yoldur).
+Varlık kartında "Fiyat güncellenemedi" ibaresi görünür. Kullanıcı Ayarlar >
+Fiyat Kaynakları'ndan TEFAS'ı tamamen kapatabilir.
+
+### Onarım için ipuçları
+
+- Yeni uç noktayı bulmak için: tefas.gov.tr'yi tarayıcıda aç, geliştirici
+  araçları > Network sekmesinde fon listesi sayfasının çağırdığı isteğe bak.
+- Topluluk kütüphaneleri genelde hızlı güncellenir; şablon olarak bak:
+  `github.com/mirzazad/pytefas`, `pypi.org/project/tefas-crawler`.
+- Önbellek anahtarları: `portify_tefas_prices` (fon başına son fiyat),
+  `portify_tefas_fund_list` (7 günlük arama listesi) — `repositories/keys.js`.

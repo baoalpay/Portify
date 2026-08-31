@@ -11,9 +11,13 @@
 //   currency -> ExchangeRate API
 //   gold     -> CoinGecko tether-gold (ons -> gram çevrimi; yaklaşık değer)
 //   silver   -> sağlayıcı yok (bilinen eksik; null döner)
-//   fund     -> sağlayıcı yok (TEFAS planda; mevcut fiyat korunur)
+//   fund     -> TEFAS (repositories/tefasRepository.js — tüm TEFAS kodu orada);
+//               MANUEL FİYAT BİRİNCİ SINIF YOLDUR: TEFAS kapalıysa/kırıksa
+//               kullanıcının girdiği fiyatla devam edilir
 
 // ============ UÇ NOKTALAR (proxy'ye geçişte SADECE burası değişir) ============
+
+import { tefasRepository } from './tefasRepository';
 
 const ENDPOINTS = {
   stockPrice: (symbol) =>
@@ -127,18 +131,44 @@ export const priceRepository = {
 
   // Tüm varlıkların fiyatını tazele; her varlık için:
   // yeni fiyat -> onu kullan; yoksa mevcut fiyatı, o da yoksa maliyeti koru.
-  // (Fon: fiyat elle girildiği için her zaman mevcut değer korunur.)
-  async updateAllPrices(holdings) {
+  //
+  // Fonlar: options.tefasEnabled true ise (varsayılan) TEFAS'tan günlük fiyat
+  // denenir; alınamazsa manuel/son bilinen fiyatla devam edilir ve holding'e
+  // priceStale=true işlenir ("fiyat güncellenemedi" göstergesi için).
+  async updateAllPrices(holdings, options = {}) {
+    const tefasEnabled = options.tefasEnabled !== false;
+
     return Promise.all(
       holdings.map(async (holding) => {
-        let currentPrice = null;
+        if (holding.type === 'fund') {
+          const tefas = tefasEnabled
+            ? await tefasRepository.getFundPrice(holding.symbol)
+            : null;
 
-        try {
-          if (holding.type === 'fund') {
-            currentPrice = holding.currentPrice ? parseFloat(holding.currentPrice) : null;
-          } else {
-            currentPrice = await this.getPrice(holding.type, holding.symbol);
+          if (tefas) {
+            return {
+              ...holding,
+              currentPrice: tefas.price.toString(),
+              priceUpdatedAt: tefas.date,
+              priceStale: !!tefas.stale,
+            };
           }
+
+          // Manuel fiyat birinci sınıf yol: TEFAS kapalı ya da veri yoksa
+          // kullanıcının girdiği fiyat (o da yoksa maliyet) kullanılır
+          const manual = holding.currentPrice
+            ? parseFloat(holding.currentPrice)
+            : parseFloat(holding.avgCost);
+          return {
+            ...holding,
+            currentPrice: manual.toString(),
+            priceStale: tefasEnabled, // açıkken alınamadıysa "güncellenemedi"
+          };
+        }
+
+        let currentPrice = null;
+        try {
+          currentPrice = await this.getPrice(holding.type, holding.symbol);
         } catch (error) {
           console.error(`Fiyat hatası (${holding.symbol}):`, error);
         }

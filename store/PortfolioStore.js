@@ -25,6 +25,7 @@ const usePortfolioStore = create((set, get) => ({
     currency: 'TRY',
     lastUpdated: null,
     privacyMode: false,
+    tefasEnabled: true, // fon fiyatlarını TEFAS'tan otomatik çek
   },
   exchangeRates: {
     USD: 0.027,
@@ -65,7 +66,7 @@ const usePortfolioStore = create((set, get) => ({
       holdings: [],
       portfolios: [DEFAULT_PORTFOLIO],
       activePortfolioId: 'default',
-      settings: { currency: 'TRY', lastUpdated: null, privacyMode: false },
+      settings: { currency: 'TRY', lastUpdated: null, privacyMode: false, tefasEnabled: true },
     });
   },
 
@@ -338,7 +339,9 @@ const usePortfolioStore = create((set, get) => ({
     if (holdings.length === 0) return;
 
     try {
-      const updatedHoldings = await priceRepository.updateAllPrices(holdings);
+      const updatedHoldings = await priceRepository.updateAllPrices(holdings, {
+        tefasEnabled: get().settings.tefasEnabled !== false,
+      });
       set({ holdings: updatedHoldings });
       await get().saveSettings({ lastUpdated: new Date().toISOString() });
       await get().saveHoldings(updatedHoldings);
