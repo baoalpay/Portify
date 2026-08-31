@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   View,
   Text,
@@ -75,6 +75,13 @@ const AddHoldingScreen = ({ navigation, route }) => {
     }
   }, [selectedType]);
 
+  // Öneriler yalnızca sorgu/liste değişince hesaplanır (her render'da
+  // 2000+ fonluk tarama koşturmamak için)
+  const fundSuggestions = useMemo(() => {
+    if (selectedType !== 'fund' || !fundList) return [];
+    return tefasRepository.searchFunds(formData.symbol, fundList);
+  }, [selectedType, formData.symbol, fundList]);
+
   // Hedef fiyat state'leri
   const [targetEnabled, setTargetEnabled] = useState(false);
   const [targetPrice, setTargetPrice] = useState('');
@@ -116,15 +123,18 @@ const AddHoldingScreen = ({ navigation, route }) => {
   const handleSave = async () => {
     let holdingId = existingHolding?.id;
 
+    // Sembol kayıt anında normalize edilir (tuş vuruşunda değil — bkz. onChangeText notu)
+    const normalizedSymbol = formData.symbol.trim().toUpperCase();
+
     const resolvedFullName = selectedType === 'fund' && fundFullName
       ? fundFullName
-      : formData.symbol || (selectedType === 'gold' ? 'Altın' : selectedType === 'silver' ? 'Gümüş' : formData.symbol);
+      : normalizedSymbol || (selectedType === 'gold' ? 'Altın' : selectedType === 'silver' ? 'Gümüş' : normalizedSymbol);
 
     if (editMode) {
       const updates = {
         symbol: noSymbolRequired
           ? (selectedType === 'gold' ? 'GOLD' : 'SILVER')
-          : formData.symbol,
+          : normalizedSymbol,
         fullName: resolvedFullName,
         quantity: formData.quantity,
         avgCost: formData.avgCost,
@@ -141,7 +151,7 @@ const AddHoldingScreen = ({ navigation, route }) => {
         type: selectedType,
         symbol: noSymbolRequired
           ? (selectedType === 'gold' ? 'GOLD' : 'SILVER')
-          : formData.symbol,
+          : normalizedSymbol,
         fullName: resolvedFullName,
         quantity: formData.quantity,
         avgCost: formData.avgCost,
@@ -330,13 +340,26 @@ const AddHoldingScreen = ({ navigation, route }) => {
                   placeholderTextColor={colors.textSecondary}
                   value={formData.symbol}
                   onChangeText={(text) => {
-                    setFormData({ ...formData, symbol: text.toUpperCase() });
+                    // DİKKAT: burada toUpperCase() YAPMA. Kontrollü alana her tuşta
+                    // dönüştürülmüş değer geri itmek, hızlı yazımda native metin ile
+                    // JS durumunu ayrıştırır (RN'in bilinen kontrollü-girdi tuzağı).
+                    // Büyük harfe çevirme kayıt anında yapılır; klavye zaten
+                    // autoCapitalize="characters" ile büyük yazar.
+                    setFormData({ ...formData, symbol: text });
                     if (selectedType === 'fund') {
                       setShowFundList(true);
                       setFundFullName('');
                     }
                   }}
                   onFocus={() => selectedType === 'fund' && !editMode && setShowFundList(true)}
+                  onEndEditing={(e) => {
+                    // Emniyet kemeri: herhangi bir nedenle native metin ile JS durumu
+                    // ayrışırsa (kaçan değişiklik olayı), düzenleme bitince eşitle
+                    const nativeText = e?.nativeEvent?.text ?? '';
+                    setFormData((prev) =>
+                      prev.symbol === nativeText ? prev : { ...prev, symbol: nativeText }
+                    );
+                  }}
                   autoCapitalize="characters"
                   editable={!editMode}
                 />
@@ -348,7 +371,7 @@ const AddHoldingScreen = ({ navigation, route }) => {
                 {selectedType === 'fund' && showFundList && !editMode && fundList &&
                   formData.symbol.length > 0 && fundFullName === '' && (
                   <View style={[styles.currencyList, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-                    {tefasRepository.searchFunds(formData.symbol, fundList).map((fund) => (
+                    {fundSuggestions.map((fund) => (
                       <TouchableOpacity
                         key={fund.code}
                         style={[styles.currencyItem, { borderBottomColor: colors.border }]}

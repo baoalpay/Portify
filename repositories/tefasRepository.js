@@ -52,6 +52,17 @@ const daysAgo = (n) => {
   return d;
 };
 
+// Uçuştaki istek tekilleştirme: aynı anda gelen eş istekler (ör. ekran odağı +
+// elle yenileme aynı fonu sorarsa) tek ağ isteğini paylaşır
+const inFlight = new Map();
+const dedupe = (key, run) => {
+  if (inFlight.has(key)) return inFlight.get(key);
+  const task = run();
+  inFlight.set(key, task);
+  task.finally(() => inFlight.delete(key));
+  return task;
+};
+
 // Basit hız freni: son istekten bu yana 10 sn geçmediyse bekler
 let lastRequestAt = 0;
 const throttle = async () => {
@@ -117,6 +128,83 @@ const requestTefas = async (body) => {
   }
 };
 
+// Tek fon için fiyat akışı (dedupe sarmalayıcısının çağırdığı asıl iş)
+const fetchFundPriceOnce = async (code) => {
+  const cache = await storage.getJSON(StorageKeys.tefasPrices, {});
+  const cached = cache[code];
+
+  // Bugün zaten ağdan alındıysa tekrar sorma
+  if (cached && cached.fetchedDay === todayKey()) {
+    return { price: cached.price, date: cached.date, stale: false };
+  }
+
+  // Son 8 günü iste (hafta sonu/tatilde de en az bir iş günü yakalanır)
+  const rows = await requestTefas({
+    fonKodu: code,
+    basTarih: toTefasDate(daysAgo(8)),
+    bitTarih: toTefasDate(new Date()),
+  });
+
+  if (rows && rows.length > 0) {
+    // En güncel kaydı al (liste tarihe göre iner ama garantiye alalım)
+    const latest = rows.reduce((a, b) => (a.tarih > b.tarih ? a : b));
+    if (typeof latest.fiyat === 'number' && latest.fiyat > 0) {
+      cache[code] = {
+        price: latest.fiyat,
+        date: latest.tarih,
+        fetchedDay: todayKey(),
+      };
+      await storage.setJSON(StorageKeys.tefasPrices, cache);
+      return { price: latest.fiyat, date: latest.tarih, stale: false };
+    }
+  }
+
+  // Ağdan alınamadı: son bilinen fiyata sessizce düş
+  if (cached) {
+    return { price: cached.price, date: cached.date, stale: true };
+  }
+  return null;
+};
+
+// Fon listesi akışı (dedupe sarmalayıcısının çağırdığı asıl iş)
+const fetchFundListOnce = async () => {
+  const cached = await storage.getJSON(StorageKeys.tefasFundList, null);
+  if (cached && Date.now() - cached.fetchedAt < FUND_LIST_TTL_MS) {
+    return cached.funds;
+  }
+
+  // Son iş gününü yakalamak için 4 günlük aralık yeterli
+  const rows = await requestTefas({
+    basTarih: toTefasDate(daysAgo(4)),
+    bitTarih: toTefasDate(new Date()),
+  });
+
+  if (rows && rows.length > 0) {
+    // Aynı fon birden çok günle gelebilir; en güncel kaydı tut
+    const byCode = {};
+    for (const row of rows) {
+      if (!row.fonKodu || !row.fonUnvan) continue;
+      if (!byCode[row.fonKodu] || row.tarih > byCode[row.fonKodu].tarih) {
+        byCode[row.fonKodu] = row;
+      }
+    }
+    const funds = Object.values(byCode)
+      .map((row) => ({ code: row.fonKodu, name: row.fonUnvan }))
+      .sort((a, b) => a.code.localeCompare(b.code, 'tr'));
+
+    if (funds.length > 0) {
+      await storage.setJSON(StorageKeys.tefasFundList, {
+        fetchedAt: Date.now(),
+        funds,
+      });
+      return funds;
+    }
+  }
+
+  // Ağ yoksa süresi geçmiş önbellek bile olsa onu kullan
+  return cached ? cached.funds : null;
+};
+
 // ============ DIŞA AÇIK ARAYÜZ ============
 
 export const tefasRepository = {
@@ -127,81 +215,13 @@ export const tefasRepository = {
   async getFundPrice(fundCode) {
     const code = String(fundCode || '').trim().toUpperCase();
     if (!code) return null;
-
-    const cache = await storage.getJSON(StorageKeys.tefasPrices, {});
-    const cached = cache[code];
-
-    // Bugün zaten ağdan alındıysa tekrar sorma
-    if (cached && cached.fetchedDay === todayKey()) {
-      return { price: cached.price, date: cached.date, stale: false };
-    }
-
-    // Son 8 günü iste (hafta sonu/tatilde de en az bir iş günü yakalanır)
-    const rows = await requestTefas({
-      fonKodu: code,
-      basTarih: toTefasDate(daysAgo(8)),
-      bitTarih: toTefasDate(new Date()),
-    });
-
-    if (rows && rows.length > 0) {
-      // En güncel kaydı al (liste tarihe göre iner ama garantiye alalım)
-      const latest = rows.reduce((a, b) => (a.tarih > b.tarih ? a : b));
-      if (typeof latest.fiyat === 'number' && latest.fiyat > 0) {
-        cache[code] = {
-          price: latest.fiyat,
-          date: latest.tarih,
-          fetchedDay: todayKey(),
-        };
-        await storage.setJSON(StorageKeys.tefasPrices, cache);
-        return { price: latest.fiyat, date: latest.tarih, stale: false };
-      }
-    }
-
-    // Ağdan alınamadı: son bilinen fiyata sessizce düş
-    if (cached) {
-      return { price: cached.price, date: cached.date, stale: true };
-    }
-    return null;
+    return dedupe(`price_${code}`, () => fetchFundPriceOnce(code));
   },
 
   // Aranabilir fon listesi: [{ code, name }] | null
   // 7 gün önbelleklenir; tek istekle tüm liste gelir. Asla fırlatmaz.
   async getFundList() {
-    const cached = await storage.getJSON(StorageKeys.tefasFundList, null);
-    if (cached && Date.now() - cached.fetchedAt < FUND_LIST_TTL_MS) {
-      return cached.funds;
-    }
-
-    // Son iş gününü yakalamak için 4 günlük aralık yeterli
-    const rows = await requestTefas({
-      basTarih: toTefasDate(daysAgo(4)),
-      bitTarih: toTefasDate(new Date()),
-    });
-
-    if (rows && rows.length > 0) {
-      // Aynı fon birden çok günle gelebilir; en güncel kaydı tut
-      const byCode = {};
-      for (const row of rows) {
-        if (!row.fonKodu || !row.fonUnvan) continue;
-        if (!byCode[row.fonKodu] || row.tarih > byCode[row.fonKodu].tarih) {
-          byCode[row.fonKodu] = row;
-        }
-      }
-      const funds = Object.values(byCode)
-        .map((row) => ({ code: row.fonKodu, name: row.fonUnvan }))
-        .sort((a, b) => a.code.localeCompare(b.code, 'tr'));
-
-      if (funds.length > 0) {
-        await storage.setJSON(StorageKeys.tefasFundList, {
-          fetchedAt: Date.now(),
-          funds,
-        });
-        return funds;
-      }
-    }
-
-    // Ağ yoksa süresi geçmiş önbellek bile olsa onu kullan
-    return cached ? cached.funds : null;
+    return dedupe('fund_list', () => fetchFundListOnce());
   },
 
   // Yerel arama — istek ATMAZ; getFundList'ten dönen liste üzerinde çalışır
