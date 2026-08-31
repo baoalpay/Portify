@@ -56,6 +56,13 @@ const QUICK_ADDS = [
   { key: null, label: 'Diğer', icon: 'add' },
 ];
 
+// Dağılım yüzdesi etiketi: kullanıcı kendi varlığını "%0" görmesin
+const percentLabel = (p) => {
+  if (p > 0 && p < 0.1) return '<%0,1';
+  if (p > 0 && p < 1) return `%${Format.number(p, 1)}`;
+  return `%${Format.number(p, 0)}`;
+};
+
 const TYPE_ICONS = {
   stock: 'trending-up',
   fund: 'pie-chart',
@@ -207,7 +214,7 @@ const PortfolioScreen = () => {
           <>
             {/* Kahraman kart: gradyanlı yüzey (kart metaforu yok) */}
             <LinearGradient
-              colors={[ds.accent, ds.accentPressed]}
+              colors={ds.heroGradient}
               start={{ x: 0, y: 0 }}
               end={{ x: 1, y: 1 }}
               style={styles.hero}
@@ -277,7 +284,7 @@ const PortfolioScreen = () => {
                             {item.name}
                           </Text>
                           <Text style={[styles.legendPercent, { color: ds.textSecondary }]}>
-                            {`%${Format.number(item.percent, 0)}`}
+                            {percentLabel(item.percent)}
                           </Text>
                         </View>
                       ))}

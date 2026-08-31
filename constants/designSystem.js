@@ -43,6 +43,9 @@ const dark = {
   lossBg: 'rgba(255, 107, 122, 0.14)',
 
   overlay: 'rgba(0, 0, 0, 0.55)', // modal arkası karartma
+
+  // Kahraman yüzey gradyanı (adlandırılmış token — ekranlar ham hex kullanmaz)
+  heroGradient: ['#8B7CF6', '#6D5BE8'],
 };
 
 // Açık tema (ayna palet — aynı token isimleri)
@@ -69,6 +72,9 @@ const light = {
   lossBg: 'rgba(208, 58, 82, 0.10)',
 
   overlay: 'rgba(15, 20, 30, 0.45)',
+
+  // Kahraman yüzey gradyanı (adlandırılmış token — ekranlar ham hex kullanmaz)
+  heroGradient: ['#5B4BD6', '#4A3BC4'],
 };
 
 export const Palette = { dark, light };
