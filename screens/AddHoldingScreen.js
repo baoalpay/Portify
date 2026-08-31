@@ -46,8 +46,18 @@ const AddHoldingScreen = ({ navigation, route }) => {
   
   const editMode = route.params?.holding ? true : false;
   const existingHolding = route.params?.holding;
-  
-  const [selectedType, setSelectedType] = useState(editMode ? existingHolding.type : null);
+  const presetType = route.params?.presetType; // hızlı ekleme kısayolundan gelen tür
+
+  const [selectedType, setSelectedType] = useState(
+    editMode ? existingHolding.type : presetType || null
+  );
+
+  // Ekran açıkken farklı bir kısayoldan tekrar gelinirse türü güncelle
+  useEffect(() => {
+    if (!editMode && presetType) {
+      setSelectedType(presetType);
+    }
+  }, [presetType, editMode]);
   const [formData, setFormData] = useState({
     symbol: editMode ? existingHolding.symbol : '',
     quantity: editMode ? existingHolding.quantity.toString() : '',

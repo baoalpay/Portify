@@ -8,6 +8,8 @@ import { ThemeProvider, useTheme } from './context/ThemeContext';
 import PortfolioScreen from './screens/PortfolioScreen';
 import HoldingsScreen from './screens/HoldingsScreen';
 import SettingsScreen from './screens/SettingsScreen';
+import AnalysisScreen from './screens/AnalysisScreen';
+import { Palette } from './constants/designSystem';
 import AddHoldingScreen from './screens/AddHoldingScreen';
 import HoldingDetailScreen from './screens/HoldingDetailScreen';
 import SplashScreen from './components/SplashScreen';
@@ -47,42 +49,42 @@ function HoldingsStack() {
 }
 
 function MainTabs() {
-  const { colors, primary, isDark } = useTheme();
+  const { isDark } = useTheme();
+  const ds = isDark ? Palette.dark : Palette.light;
 
   return (
     <Tab.Navigator
       screenOptions={({ route }) => ({
         headerShown: false,
         tabBarStyle: {
-          backgroundColor: colors.surface,
-          borderTopColor: colors.border,
+          backgroundColor: ds.surface,
+          borderTopColor: ds.border,
           borderTopWidth: 1,
-          height: Platform.OS === 'ios' ? 85 : 65,
-          paddingBottom: Platform.OS === 'ios' ? 20 : 10,
-          paddingTop: 10,
-          elevation: 8,
-          shadowColor: '#000',
-          shadowOffset: { width: 0, height: -2 },
-          shadowOpacity: 0.1,
-          shadowRadius: 8,
+          height: Platform.OS === 'ios' ? 85 : 64,
+          paddingBottom: Platform.OS === 'ios' ? 20 : 8,
+          paddingTop: 8,
+          elevation: 0,
+          shadowOpacity: 0,
         },
-        tabBarActiveTintColor: primary,
-        tabBarInactiveTintColor: colors.textSecondary,
-        tabBarIcon: ({ focused, color, size }) => {
+        tabBarActiveTintColor: ds.accent,
+        tabBarInactiveTintColor: ds.textSecondary,
+        tabBarIcon: ({ focused, color }) => {
           let iconName;
 
           if (route.name === 'Portfolio') {
             iconName = focused ? 'pie-chart' : 'pie-chart-outline';
           } else if (route.name === 'Holdings') {
             iconName = focused ? 'wallet' : 'wallet-outline';
+          } else if (route.name === 'Analysis') {
+            iconName = focused ? 'stats-chart' : 'stats-chart-outline';
           } else if (route.name === 'Settings') {
             iconName = focused ? 'settings' : 'settings-outline';
           }
 
-          return <Ionicons name={iconName} size={26} color={color} />;
+          return <Ionicons name={iconName} size={24} color={color} />;
         },
         tabBarLabelStyle: {
-          fontSize: 12,
+          fontSize: 11,
           fontWeight: '600',
           marginTop: -2,
         },
@@ -97,6 +99,11 @@ function MainTabs() {
         name="Holdings"
         component={HoldingsStack}
         options={{ tabBarLabel: 'Varlıklarım' }}
+      />
+      <Tab.Screen
+        name="Analysis"
+        component={AnalysisScreen}
+        options={{ tabBarLabel: 'Analiz' }}
       />
       <Tab.Screen
         name="Settings"
