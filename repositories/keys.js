@@ -3,6 +3,7 @@
 // yedekleme bu listeye güvenir.
 
 export const StorageKeys = {
+  schemaVersion: 'portify_schema_version',      // veri yapısı sürümü (bkz. migrationRepository)
   portfolios: 'portify_portfolios',
   activePortfolio: 'portify_active_portfolio',
   settings: 'portify_settings',

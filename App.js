@@ -15,6 +15,7 @@ import HoldingDetailScreen from './screens/HoldingDetailScreen';
 import SplashScreen from './components/SplashScreen';
 import OnboardingScreen, { checkOnboardingCompleted } from './components/OnboardingScreen';
 import usePortfolioStore from './store/PortfolioStore';
+import { migrationRepository } from './repositories/migrationRepository';
 
 const Tab = createBottomTabNavigator();
 const Stack = createStackNavigator();
@@ -200,10 +201,13 @@ function AppContent() {
   const [isReady, setIsReady] = useState(false);
 
   useEffect(() => {
-    checkOnboardingStatus();
+    initApp();
   }, []);
 
-  const checkOnboardingStatus = async () => {
+  const initApp = async () => {
+    // Veri göçleri, veri okuyan her şeyden önce tamamlanmalı.
+    // (isReady bunu bekler; PriceUpdateManager ve ekranlar sonra kurulur.)
+    await migrationRepository.runMigrations();
     const completed = await checkOnboardingCompleted();
     setShowOnboarding(!completed);
     setIsReady(true);

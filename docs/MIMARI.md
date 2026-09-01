@@ -309,3 +309,92 @@ Fiyat Kaynakları'ndan TEFAS'ı tamamen kapatabilir.
   `github.com/mirzazad/pytefas`, `pypi.org/project/tefas-crawler`.
 - Önbellek anahtarları: `portify_tefas_prices` (fon başına son fiyat),
   `portify_tefas_fund_list` (7 günlük arama listesi) — `repositories/keys.js`.
+
+---
+
+## 8. Veri Yapısı Sürümleme ve Göç (Migration)
+
+> Eklendi: 1 Eylül 2026. İlgili kod: `repositories/migrationRepository.js`.
+
+### Neden var?
+
+AsyncStorage'daki veri yapısı zamanla değişecek (yeni alan, anahtar yeniden
+adlandırma, format değişikliği...). Uygulamayı güncelleyen mevcut kullanıcının
+telefonunda **eski yapıda veri** durur; yeni kod bu veriyi okuyamazsa kullanıcı
+portföyünü kaybeder. Göç mekanizması bunu önler: veri, açılışta otomatik olarak
+adım adım güncel yapıya taşınır.
+
+### Nasıl çalışır?
+
+- Her cihazda `portify_schema_version` anahtarında bir **şema sürümü damgası**
+  tutulur. Kodun beklediği sürüm: `CURRENT_SCHEMA_VERSION`
+  (`migrationRepository.js` içinde; şu an **1**).
+- `App.js` açılışta, veri okuyan her şeyden **önce**
+  `migrationRepository.runMigrations()` çağırır (`initApp` içinde; `isReady`
+  bayrağı göçler bitmeden `true` olmaz — ekranlar ve `PriceUpdateManager`
+  göçlerden sonra kurulur).
+- `runMigrations` şunu yapar:
+  1. Damgayı okur. Damga yoksa: cihazda hiç portföy verisi yoksa **temiz
+     kurulum** sayılır ve doğrudan `CURRENT_SCHEMA_VERSION` damgalanır; veri
+     varsa bu, sürümleme eklenmeden önceki yapıdır ve **sürüm 1** kabul edilir.
+  2. Damga < güncel sürüm ise `MIGRATIONS` listesindeki bekleyen adımlar
+     **sırayla** çalıştırılır. **Her adımdan sonra damga hemen yazılır**;
+     uygulama yarıda kapanırsa tamamlanan adımlar bir daha çalışmaz, kalan
+     adımlar sonraki açılışta devam eder.
+  3. Damga > güncel sürüm ise (uygulama sürümü geri alınmış) hiçbir şey
+     yapılmaz; veriye dokunulmaz.
+- `runMigrations` **asla fırlatmaz**: bir adım hata verirse damga son başarılı
+  adımda kalır, hata loglanır, uygulama eldeki veriyle açılır ve göç sonraki
+  açılışta yeniden denenir.
+
+### Diğer sistemlerle etkileşim (dikkat!)
+
+- **"Tüm Verileri Sil"** (`maintenanceRepository.clearAllData`) sürüm damgasını
+  **silmez**. Silseydi, sonrasında yazılan yeni veriler bir dahaki açılışta
+  "damgasız eski veri" sanılıp gereksiz yere göçten geçirilirdi.
+- **Yedekten geri yükleme** (`backupRepository.importData`) başarılı içe
+  aktarmadan sonra damgayı `CURRENT_SCHEMA_VERSION` yapar. Yedek formatının
+  kendi sürümü ayrıdır (`BACKUP_SCHEMA`); eski formatta bir yedeğin veri
+  dönüşümü `importData` içinde, depoya yazılmadan önce yapılmalıdır.
+- Göçler **tema anahtarlarına dokunmaz** (`theme`, `theme_color`):
+  `ThemeProvider` bu anahtarları göçlerden önce okuyabilir.
+
+### Yeni bir göç eklerken yapılacaklar (kontrol listesi)
+
+Örnek: varlık kayıtlarına `note` alanı ekleyeceksin ve eski kayıtlarda bu alan
+boş string olsun istiyorsun.
+
+1. `migrationRepository.js` içinde `CURRENT_SCHEMA_VERSION`'ı **1 artır**
+   (ör. 1 → 2).
+2. `MIGRATIONS` dizisinin **sonuna** yeni adımı ekle (dizi `to` alanına göre
+   artan sırada durmalı):
+
+   ```js
+   {
+     to: 2,
+     name: 'varliklara-note-alani',
+     run: async () => {
+       // TÜM portföylerin varlık anahtarlarını dolaş (sadece default değil!)
+       const keys = await storage.getAllKeys();
+       const holdingKeys = keys.filter(
+         (k) => k === StorageKeys.holdingsDefault || k.startsWith(StorageKeys.holdingsPrefix)
+       );
+       for (const key of holdingKeys) {
+         const holdings = await storage.getJSON(key, []);
+         const migrated = holdings.map((h) => ({ ...h, note: h.note ?? '' }));
+         await storage.setJSON(key, migrated);
+       }
+     },
+   },
+   ```
+
+3. Adımı **idempotent** yaz: iki kez çalışsa da veri bozulmamalı (`??` ile
+   "zaten varsa dokunma" kalıbı gibi). Yarıda kesilen adım baştan çalışır.
+4. Adım **asla kullanıcı verisini silmemeli**; anahtar yeniden adlandırıyorsan
+   önce yeni anahtara yaz, sonra eskisini kaldır.
+5. Veri yapısı değişikliği yedek formatını da etkiliyorsa
+   `backupRepository.js`'te `BACKUP_SCHEMA`'yı artır ve `importData`'ya eski
+   yedekler için dönüşüm ekle; `validateBackup`'taki alan kontrollerini güncelle.
+6. Test et: (a) temiz kurulum, (b) eski sürümden veriyle güncelleme
+   (emülatörde eski APK ile veri oluştur → yeni build'i üzerine kur),
+   (c) göç sonrası "Tüm Verileri Sil" + yeniden veri girişi.

@@ -13,6 +13,7 @@
 import { storage } from './storage';
 import { StorageKeys, holdingsKeyFor } from './keys';
 import { maintenanceRepository } from './maintenanceRepository';
+import { CURRENT_SCHEMA_VERSION } from './migrationRepository';
 
 const BACKUP_APP = 'portify';
 const BACKUP_SCHEMA = 1;
@@ -182,6 +183,10 @@ export const backupRepository = {
     if (data.alerts && typeof data.alerts === 'object') {
       await storage.setJSON(StorageKeys.alerts, data.alerts);
     }
+
+    // İçe aktarılan veri güncel yapıya yazıldı; sürüm damgasını tazele.
+    // (Yedek formatı değişirse dönüşüm bu fonksiyonda, yazmadan önce yapılır.)
+    await storage.setJSON(StorageKeys.schemaVersion, CURRENT_SCHEMA_VERSION);
 
     return { success: true, errors: [] };
   },

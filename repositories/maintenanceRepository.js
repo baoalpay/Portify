@@ -4,8 +4,10 @@
 // portföyler, aktif portföy, TÜM portföylerin varlıkları, ayarlar,
 // geçmiş ve fiyat alarmları (portify_* anahtarları).
 //
-// Korunanlar: cihaz tercihleri (tema, tema rengi) ve onboarding durumu —
-// veri silen kullanıcıya tanıtım ekranını yeniden göstermek gereksiz.
+// Korunanlar: cihaz tercihleri (tema, tema rengi), onboarding durumu ve
+// veri yapısı sürüm damgası. Damga silinirse, silme sonrası yazılan yeni
+// veri "damgasız eski veri" sanılıp gereksiz göçlerden geçirilebilirdi —
+// bkz. repositories/migrationRepository.js.
 
 import { storage } from './storage';
 import { StorageKeys } from './keys';
@@ -15,7 +17,10 @@ export const maintenanceRepository = {
   async clearAllData() {
     const keys = await storage.getAllKeys();
     const toRemove = keys.filter(
-      (key) => key.startsWith('portify_') && key !== StorageKeys.onboarding
+      (key) =>
+        key.startsWith('portify_') &&
+        key !== StorageKeys.onboarding &&
+        key !== StorageKeys.schemaVersion
     );
     await storage.multiRemove(toRemove);
     return toRemove.length;
