@@ -12,11 +12,16 @@ expo-env.d.ts
 # Native
 .kotlin/
 *.orig.*
-*.jks
-*.p8
-*.p12
-*.key
 *.mobileprovision
+
+# İmzalama anahtarları — release keystore ASLA git'e girmez.
+# Kaybolursa Play Store'da aynı uygulamayı bir daha güncelleyemezsin;
+# git'e girerse anahtarı ele geçiren senin adına imzalı APK üretebilir.
+*.keystore
+*.jks
+*.p12
+*.p8
+*.key
 
 # Metro
 .metro-health-check*
