@@ -1,3 +1,17 @@
+// Ayarlar — yeniden tasarım (Portföy/Varlıklarım ile aynı dil)
+//
+// Korunan işlevler: karanlık mod, tema rengi, gizlilik modu, para birimi,
+// TEFAS otomatik fiyat anahtarı, yedek dışa/içe aktarma, tüm verileri silme,
+// hukuki metin modalları. (Portföy yönetimi Portföy sekmesindeki
+// PortfolioSelector'dadır; bu ekrana taşınmadı.)
+//
+// Tasarım kuralları:
+// - İçerik BÖLÜMLER halinde: Görünüm / Gizlilik / Fiyat ve Para Birimi /
+//   Veri / Tehlikeli Bölge / Bilgilendirme / Hakkında.
+// - Yıkıcı işlem (Tüm Verileri Sil) ayrı "Tehlikeli Bölge" kartında,
+//   kırmızı çerçeveyle ayrışır ve İKİ AŞAMALI onay ister.
+// - Reklam alanı kaydırılan içeriğin EN SONUNDA, sabit değil (AdSlot).
+
 import React, { useState } from 'react';
 import {
   View,
@@ -9,13 +23,20 @@ import {
   Switch,
   Alert,
   Modal,
+  Linking,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import * as Haptics from 'expo-haptics';
 import { useTheme, THEME_COLORS } from '../context/ThemeContext';
-import { Spacing, BorderRadius, Typography } from '../constants/theme';
+import { Palette, Spacing, Radius, Typography, A11y } from '../constants/designSystem';
 import usePortfolioStore from '../store/PortfolioStore';
 import { backupRepository } from '../repositories/backupRepository';
 import { exportBackup, pickBackupFile } from '../services/backupService';
+import AdSlot from '../components/ui/AdSlot';
+
+// Sürüm tek yerden okunur; elle güncellenmez
+const APP_VERSION = require('../app.json').expo.version;
+const CONTACT_EMAIL = 'baoalpay@gmail.com';
 
 const LEGAL_CONTENT = {
   disclaimer: {
@@ -165,8 +186,9 @@ Gizlilik ile ilgili sorularınız için: baoalpay@gmail.com`
 };
 
 const SettingsScreen = () => {
-  const { colors, primary, isDark, toggleTheme, setThemeColor, selectedColorId } = useTheme();
-  
+  const { primary, isDark, toggleTheme, setThemeColor, selectedColorId } = useTheme();
+  const ds = isDark ? Palette.dark : Palette.light;
+
   const resetAllData = usePortfolioStore((state) => state.resetAllData);
   const loadPortfolios = usePortfolioStore((state) => state.loadPortfolios);
   const loadHoldings = usePortfolioStore((state) => state.loadHoldings);
@@ -181,31 +203,29 @@ const SettingsScreen = () => {
   const [modalContent, setModalContent] = useState(null);
   const [colorModalVisible, setColorModalVisible] = useState(false);
 
+  const tefasEnabled = settings.tefasEnabled !== false;
+
   const openModal = (type) => {
     setModalContent(LEGAL_CONTENT[type]);
     setModalVisible(true);
   };
 
   const handleColorSelect = (colorId) => {
-    const colorObj = THEME_COLORS.find(c => c.id === colorId);
-    
-    // Premium kontrolü
+    const colorObj = THEME_COLORS.find((c) => c.id === colorId);
     if (colorObj?.isPremium && !isPremium) {
       Alert.alert(
         'Premium Gerekli',
-        'Bu tema rengini kullanmak için Premium\'a geçmeniz gerekiyor.',
+        "Bu tema rengini kullanmak için Premium'a geçmeniz gerekiyor.",
         [{ text: 'Tamam' }]
       );
       return;
     }
-    
+    Haptics.selectionAsync();
     setThemeColor(colorId);
   };
 
-  const getSelectedColorName = () => {
-    const colorObj = THEME_COLORS.find(c => c.id === selectedColorId);
-    return colorObj?.name || 'Mor';
-  };
+  const selectedColorName =
+    THEME_COLORS.find((c) => c.id === selectedColorId)?.name || 'Mor';
 
   const handleExport = async () => {
     const result = await exportBackup();
@@ -216,7 +236,6 @@ const SettingsScreen = () => {
 
   const handleImport = async () => {
     const picked = await pickBackupFile();
-
     if (picked.canceled) return;
     if (picked.error) {
       Alert.alert('Hata', picked.error);
@@ -255,415 +274,354 @@ const SettingsScreen = () => {
     }
   };
 
-  const clearAllData = async () => {
+  // Yıkıcı işlem: iki aşamalı onay
+  const clearAllData = () => {
     Alert.alert(
       'Tüm Verileri Sil',
-      'Tüm portföy verileriniz silinecek. Bu işlem geri alınamaz. Emin misiniz?',
+      'Tüm portföyleriniz, varlıklarınız, geçmiş kayıtlarınız ve fiyat alarmlarınız kalıcı olarak silinecek. Bu işlem GERİ ALINAMAZ.\n\nSilmeden önce "Yedeği Dışa Aktar" ile yedek almanız önerilir.',
       [
-        { text: 'İptal', style: 'cancel' },
+        { text: 'Vazgeç', style: 'cancel' },
         {
-          text: 'Sil',
+          text: 'Devam Et',
           style: 'destructive',
-          onPress: async () => {
-            await resetAllData();
-            Alert.alert('Başarılı', 'Tüm veriler silindi.');
-          },
+          onPress: () =>
+            Alert.alert(
+              'Son Onay',
+              'Emin misiniz? Tüm veriler kalıcı olarak silinecek.',
+              [
+                { text: 'Vazgeç', style: 'cancel' },
+                {
+                  text: 'Evet, Hepsini Sil',
+                  style: 'destructive',
+                  onPress: async () => {
+                    await resetAllData();
+                    Alert.alert('Tamamlandı', 'Tüm veriler silindi.');
+                  },
+                },
+              ]
+            ),
         },
       ]
     );
   };
 
-  const getCurrencyLabel = () => {
-    switch (settings.currency) {
-      case 'USD': return '$ Amerikan Doları';
-      case 'EUR': return '€ Euro';
-      default: return '₺ Türk Lirası';
-    }
+  const currencyLabel =
+    settings.currency === 'USD'
+      ? '$ Amerikan Doları'
+      : settings.currency === 'EUR'
+        ? '€ Euro'
+        : '₺ Türk Lirası';
+
+  const switchColors = {
+    trackColor: { false: ds.border, true: ds.accent + '66' },
   };
 
+  // Ortak satır: ikon + etiket(+alt yazı) + sağ öğe (veya ok)
+  const Row = ({ icon, label, subtitle, onPress, right, color, first }) => {
+    const content = (
+      <View style={[styles.row, !first && { borderTopColor: ds.border, borderTopWidth: StyleSheet.hairlineWidth }]}>
+        <View style={[styles.rowIcon, { backgroundColor: (color || ds.accent) + '14' }]}>
+          <Ionicons name={icon} size={20} color={color || ds.accent} />
+        </View>
+        <View style={styles.rowText}>
+          <Text style={[styles.rowLabel, { color: color || ds.text }]}>{label}</Text>
+          {subtitle ? (
+            <Text style={[styles.rowSubtitle, { color: ds.textSecondary }]}>{subtitle}</Text>
+          ) : null}
+        </View>
+        {right !== undefined
+          ? right
+          : onPress && <Ionicons name="chevron-forward" size={18} color={ds.textTertiary} />}
+      </View>
+    );
+    return onPress ? (
+      <TouchableOpacity onPress={onPress} activeOpacity={0.7}>
+        {content}
+      </TouchableOpacity>
+    ) : (
+      content
+    );
+  };
+
+  const Section = ({ title, children, footnote, titleColor, borderColor }) => (
+    <View style={styles.group}>
+      <Text style={[styles.groupTitle, { color: titleColor || ds.textSecondary }]}>{title}</Text>
+      <View
+        style={[
+          styles.card,
+          { backgroundColor: ds.surface, borderColor: borderColor || ds.border },
+        ]}
+      >
+        {children}
+      </View>
+      {footnote ? (
+        <Text style={[styles.footnote, { color: ds.textTertiary }]}>{footnote}</Text>
+      ) : null}
+    </View>
+  );
+
   return (
-    <View style={[styles.container, { backgroundColor: colors.background }]}>
-      <StatusBar
-        barStyle={isDark ? 'light-content' : 'dark-content'}
-        backgroundColor={colors.background}
-      />
+    <View style={[styles.container, { backgroundColor: ds.background }]}>
+      <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} backgroundColor={ds.background} />
 
       <View style={styles.header}>
-        <Text style={[styles.title, { color: primary }]}>Ayarlar</Text>
+        <Text style={[styles.title, { color: ds.text }]}>Ayarlar</Text>
       </View>
 
-      <ScrollView
-        showsVerticalScrollIndicator={false}
-        contentContainerStyle={styles.scrollContent}
-      >
+      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scroll}>
         {/* Görünüm */}
-        <View style={styles.group}>
-          <Text style={[styles.groupTitle, { color: colors.textSecondary }]}>
-            GÖRÜNÜM
-          </Text>
-          <View style={[styles.groupCard, { backgroundColor: colors.surface }]}>
-            {/* Dark Mode */}
-            <View style={styles.settingItem}>
-              <View style={styles.settingLeft}>
-                <View style={[styles.iconContainer, { backgroundColor: primary + '15' }]}>
-                  <Ionicons name="moon" size={22} color={primary} />
-                </View>
-                <Text style={[styles.settingLabel, { color: colors.text }]}>
-                  Karanlık Mod
-                </Text>
-              </View>
+        <Section title="GÖRÜNÜM">
+          <Row
+            first
+            icon="moon"
+            label="Karanlık Mod"
+            right={
               <Switch
                 value={isDark}
-                onValueChange={toggleTheme}
-                trackColor={{ false: colors.border, true: primary + '60' }}
-                thumbColor={isDark ? primary : colors.textSecondary}
+                onValueChange={() => {
+                  Haptics.selectionAsync();
+                  toggleTheme();
+                }}
+                {...switchColors}
+                thumbColor={isDark ? ds.accent : ds.textTertiary}
               />
-            </View>
-
-            <View style={[styles.divider, { backgroundColor: colors.border }]} />
-
-            {/* Gizlilik Modu */}
-            <View style={styles.settingItem}>
-              <View style={styles.settingLeft}>
-                <View style={[styles.iconContainer, { backgroundColor: primary + '15' }]}>
-                  <Ionicons name="eye-off" size={22} color={primary} />
-                </View>
-                <View>
-                  <Text style={[styles.settingLabel, { color: colors.text }]}>
-                    Gizlilik Modu
-                  </Text>
-                  <Text style={[styles.settingSubtitle, { color: colors.textSecondary }]}>
-                    Tutarları gizle
-                  </Text>
-                </View>
+            }
+          />
+          <Row
+            icon="color-palette"
+            label="Tema Rengi"
+            subtitle={selectedColorName}
+            onPress={() => setColorModalVisible(true)}
+            right={
+              <View style={styles.rowRight}>
+                <View style={[styles.colorDot, { backgroundColor: primary }]} />
+                <Ionicons name="chevron-forward" size={18} color={ds.textTertiary} />
               </View>
+            }
+          />
+        </Section>
+
+        {/* Gizlilik */}
+        <Section
+          title="GİZLİLİK"
+          footnote="Açıkken tutar, adet ve maliyetler tüm ekranlarda maskelenir; birim piyasa fiyatları görünür kalır."
+        >
+          <Row
+            first
+            icon="eye-off"
+            label="Gizlilik Modu"
+            subtitle="Tutarları gizle"
+            right={
               <Switch
                 value={!!settings.privacyMode}
-                onValueChange={togglePrivacyMode}
-                trackColor={{ false: colors.border, true: primary + '60' }}
-                thumbColor={settings.privacyMode ? primary : colors.textSecondary}
+                onValueChange={() => {
+                  Haptics.selectionAsync();
+                  togglePrivacyMode();
+                }}
+                {...switchColors}
+                thumbColor={settings.privacyMode ? ds.accent : ds.textTertiary}
               />
-            </View>
+            }
+          />
+        </Section>
 
-            <View style={[styles.divider, { backgroundColor: colors.border }]} />
-
-            {/* Tema Rengi */}
-            <TouchableOpacity 
-              style={styles.settingItem} 
-              activeOpacity={0.7}
-              onPress={() => setColorModalVisible(true)}
-            >
-              <View style={styles.settingLeft}>
-                <View style={[styles.iconContainer, { backgroundColor: primary + '15' }]}>
-                  <Ionicons name="color-palette" size={22} color={primary} />
-                </View>
-                <View>
-                  <Text style={[styles.settingLabel, { color: colors.text }]}>
-                    Tema Rengi
-                  </Text>
-                  <Text style={[styles.settingSubtitle, { color: colors.textSecondary }]}>
-                    {getSelectedColorName()}
-                  </Text>
-                </View>
-              </View>
-              <View style={styles.settingRight}>
-                <View style={[styles.colorPreview, { backgroundColor: primary }]} />
-                <Ionicons name="chevron-forward" size={20} color={colors.textSecondary} />
-              </View>
-            </TouchableOpacity>
-
-            <View style={[styles.divider, { backgroundColor: colors.border }]} />
-
-            {/* Para Birimi */}
-            <View style={styles.settingItem}>
-              <View style={styles.settingLeft}>
-                <View style={[styles.iconContainer, { backgroundColor: primary + '15' }]}>
-                  <Ionicons name="cash-outline" size={22} color={primary} />
-                </View>
-                <View>
-                  <Text style={[styles.settingLabel, { color: colors.text }]}>
-                    Para Birimi
-                  </Text>
-                  <Text style={[styles.settingSubtitle, { color: colors.textSecondary }]}>
-                    {getCurrencyLabel()}
-                  </Text>
-                </View>
-              </View>
+        {/* Fiyat ve Para Birimi */}
+        <Section
+          title="FİYAT VE PARA BİRİMİ"
+          footnote="Fon fiyatlarının kaynağı Takasbank TEFAS'tır. Fon fiyatları günde bir kez hesaplanır ve ertesi iş günü açıklanır; anlık değildir."
+        >
+          <Row
+            first
+            icon="cash-outline"
+            label="Para Birimi"
+            subtitle={currencyLabel}
+            right={
               <View style={styles.currencySelector}>
-                {['TRY', 'USD', 'EUR'].map((cur) => (
-                  <TouchableOpacity
-                    key={cur}
-                    style={[
-                      styles.currencyButton,
-                      { borderColor: colors.border },
-                      settings.currency === cur && { backgroundColor: primary, borderColor: primary }
-                    ]}
-                    onPress={() => setCurrency(cur)}
-                  >
-                    <Text style={[
-                      styles.currencyButtonText,
-                      { color: colors.text },
-                      settings.currency === cur && { color: '#FFFFFF' }
-                    ]}>
-                      {cur === 'TRY' ? '₺' : cur === 'USD' ? '$' : '€'}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
+                {['TRY', 'USD', 'EUR'].map((cur) => {
+                  const active = settings.currency === cur;
+                  return (
+                    <TouchableOpacity
+                      key={cur}
+                      style={[
+                        styles.currencyButton,
+                        { borderColor: active ? ds.accent : ds.border },
+                        active && { backgroundColor: ds.accent },
+                      ]}
+                      onPress={() => {
+                        Haptics.selectionAsync();
+                        setCurrency(cur);
+                      }}
+                    >
+                      <Text
+                        style={[
+                          styles.currencyButtonText,
+                          { color: active ? ds.onAccent : ds.text },
+                        ]}
+                      >
+                        {cur === 'TRY' ? '₺' : cur === 'USD' ? '$' : '€'}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
               </View>
-            </View>
-          </View>
-        </View>
-
-        {/* Fiyat Kaynakları */}
-        <View style={styles.group}>
-          <Text style={[styles.groupTitle, { color: colors.textSecondary }]}>
-            FİYAT KAYNAKLARI
-          </Text>
-          <View style={[styles.groupCard, { backgroundColor: colors.surface }]}>
-            <View style={styles.settingItem}>
-              <View style={styles.settingLeft}>
-                <View style={[styles.iconContainer, { backgroundColor: primary + '15' }]}>
-                  <Ionicons name="cloud-download-outline" size={22} color={primary} />
-                </View>
-                <View>
-                  <Text style={[styles.settingLabel, { color: colors.text }]}>
-                    TEFAS'tan otomatik fiyat çek
-                  </Text>
-                  <Text style={[styles.settingSubtitle, { color: colors.textSecondary }]}>
-                    Kapalıyken fon fiyatları elle girilir
-                  </Text>
-                </View>
-              </View>
+            }
+          />
+          <Row
+            icon="cloud-download-outline"
+            label="TEFAS'tan otomatik fiyat çek"
+            subtitle="Kapalıyken fon fiyatları elle girilir"
+            right={
               <Switch
-                value={settings.tefasEnabled !== false}
-                onValueChange={() => saveSettings({ tefasEnabled: !(settings.tefasEnabled !== false) })}
-                trackColor={{ false: colors.border, true: primary + '60' }}
-                thumbColor={settings.tefasEnabled !== false ? primary : colors.textSecondary}
+                value={tefasEnabled}
+                onValueChange={() => {
+                  Haptics.selectionAsync();
+                  saveSettings({ tefasEnabled: !tefasEnabled });
+                }}
+                {...switchColors}
+                thumbColor={tefasEnabled ? ds.accent : ds.textTertiary}
               />
-            </View>
-          </View>
-          <Text style={[styles.groupFootnote, { color: colors.textSecondary }]}>
-            Fon fiyatlarının kaynağı Takasbank TEFAS'tır. Fon fiyatları günde bir kez
-            hesaplanır ve ertesi iş günü açıklanır; anlık değildir.
-          </Text>
-        </View>
+            }
+          />
+        </Section>
 
-        {/* Veri Yönetimi */}
-        <View style={styles.group}>
-          <Text style={[styles.groupTitle, { color: colors.textSecondary }]}>
-            VERİ YÖNETİMİ
-          </Text>
-          <View style={[styles.groupCard, { backgroundColor: colors.surface }]}>
-            <TouchableOpacity style={styles.settingItem} activeOpacity={0.7} onPress={handleExport}>
-              <View style={styles.settingLeft}>
-                <View style={[styles.iconContainer, { backgroundColor: primary + '15' }]}>
-                  <Ionicons name="download-outline" size={22} color={primary} />
-                </View>
-                <Text style={[styles.settingLabel, { color: colors.text }]}>
-                  Yedeği Dışa Aktar
-                </Text>
-              </View>
-              <Ionicons name="chevron-forward" size={20} color={colors.textSecondary} />
-            </TouchableOpacity>
+        {/* Veri */}
+        <Section
+          title="VERİ"
+          footnote="Yedek, tüm portföylerinizi, ayarlarınızı, geçmişi ve alarmları içeren tek bir JSON dosyasıdır."
+        >
+          <Row first icon="download-outline" label="Yedeği Dışa Aktar" onPress={handleExport} />
+          <Row icon="cloud-upload-outline" label="Yedekten Geri Yükle" onPress={handleImport} />
+        </Section>
 
-            <View style={[styles.divider, { backgroundColor: colors.border }]} />
-
-            <TouchableOpacity style={styles.settingItem} activeOpacity={0.7} onPress={handleImport}>
-              <View style={styles.settingLeft}>
-                <View style={[styles.iconContainer, { backgroundColor: primary + '15' }]}>
-                  <Ionicons name="cloud-upload-outline" size={22} color={primary} />
-                </View>
-                <Text style={[styles.settingLabel, { color: colors.text }]}>
-                  Yedekten Geri Yükle
-                </Text>
-              </View>
-              <Ionicons name="chevron-forward" size={20} color={colors.textSecondary} />
-            </TouchableOpacity>
-
-            <View style={[styles.divider, { backgroundColor: colors.border }]} />
-
-            <TouchableOpacity style={styles.settingItem} activeOpacity={0.7} onPress={clearAllData}>
-              <View style={styles.settingLeft}>
-                <View style={[styles.iconContainer, { backgroundColor: '#EF4444' + '15' }]}>
-                  <Ionicons name="trash" size={22} color="#EF4444" />
-                </View>
-                <Text style={[styles.settingLabel, { color: '#EF4444' }]}>
-                  Tüm Verileri Sil
-                </Text>
-              </View>
-              <Ionicons name="chevron-forward" size={20} color={colors.textSecondary} />
-            </TouchableOpacity>
-          </View>
-        </View>
+        {/* Tehlikeli Bölge — görsel olarak ayrık, iki aşamalı onay */}
+        <Section title="TEHLİKELİ BÖLGE" titleColor={ds.loss} borderColor={ds.loss + '66'}>
+          <Row
+            first
+            icon="trash"
+            color={ds.loss}
+            label="Tüm Verileri Sil"
+            subtitle="Tüm portföyler, varlıklar, geçmiş ve alarmlar kalıcı olarak silinir"
+            onPress={clearAllData}
+          />
+        </Section>
 
         {/* Bilgilendirme */}
-        <View style={styles.group}>
-          <Text style={[styles.groupTitle, { color: colors.textSecondary }]}>
-            BİLGİLENDİRME
-          </Text>
-          <View style={[styles.groupCard, { backgroundColor: colors.surface }]}>
-            <TouchableOpacity
-              style={styles.settingItem}
-              activeOpacity={0.7}
-              onPress={() => openModal('disclaimer')}
-            >
-              <View style={styles.settingLeft}>
-                <View style={[styles.iconContainer, { backgroundColor: primary + '15' }]}>
-                  <Ionicons name="information-circle" size={22} color={primary} />
-                </View>
-                <Text style={[styles.settingLabel, { color: colors.text }]}>
-                  Sorumluluk Reddi
-                </Text>
-              </View>
-              <Ionicons name="chevron-forward" size={20} color={colors.textSecondary} />
-            </TouchableOpacity>
-
-            <View style={[styles.divider, { backgroundColor: colors.border }]} />
-
-            <TouchableOpacity
-              style={styles.settingItem}
-              activeOpacity={0.7}
-              onPress={() => openModal('terms')}
-            >
-              <View style={styles.settingLeft}>
-                <View style={[styles.iconContainer, { backgroundColor: primary + '15' }]}>
-                  <Ionicons name="document-text" size={22} color={primary} />
-                </View>
-                <Text style={[styles.settingLabel, { color: colors.text }]}>
-                  Kullanım Koşulları
-                </Text>
-              </View>
-              <Ionicons name="chevron-forward" size={20} color={colors.textSecondary} />
-            </TouchableOpacity>
-
-            <View style={[styles.divider, { backgroundColor: colors.border }]} />
-
-            <TouchableOpacity
-              style={styles.settingItem}
-              activeOpacity={0.7}
-              onPress={() => openModal('privacy')}
-            >
-              <View style={styles.settingLeft}>
-                <View style={[styles.iconContainer, { backgroundColor: primary + '15' }]}>
-                  <Ionicons name="shield-checkmark" size={22} color={primary} />
-                </View>
-                <Text style={[styles.settingLabel, { color: colors.text }]}>
-                  Gizlilik Politikası
-                </Text>
-              </View>
-              <Ionicons name="chevron-forward" size={20} color={colors.textSecondary} />
-            </TouchableOpacity>
-          </View>
-        </View>
+        <Section title="BİLGİLENDİRME">
+          <Row
+            first
+            icon="information-circle"
+            label="Sorumluluk Reddi"
+            onPress={() => openModal('disclaimer')}
+          />
+          <Row icon="document-text" label="Kullanım Koşulları" onPress={() => openModal('terms')} />
+          <Row
+            icon="shield-checkmark"
+            label="Gizlilik Politikası"
+            onPress={() => openModal('privacy')}
+          />
+        </Section>
 
         {/* Hakkında */}
-        <View style={styles.group}>
-          <Text style={[styles.groupTitle, { color: colors.textSecondary }]}>
-            HAKKINDA
-          </Text>
-          <View style={[styles.groupCard, { backgroundColor: colors.surface }]}>
-            <View style={styles.settingItem}>
-              <View style={styles.settingLeft}>
-                <View style={[styles.iconContainer, { backgroundColor: primary + '15' }]}>
-                  <Ionicons name="information" size={22} color={primary} />
-                </View>
-                <Text style={[styles.settingLabel, { color: colors.text }]}>
-                  Versiyon
-                </Text>
-              </View>
-              <Text style={[styles.settingValue, { color: colors.textSecondary }]}>
-                1.0.0
-              </Text>
-            </View>
-          </View>
-        </View>
+        <Section title="HAKKINDA">
+          <Row
+            first
+            icon="information"
+            label="Sürüm"
+            right={<Text style={[styles.rowValue, { color: ds.textSecondary }]}>{APP_VERSION}</Text>}
+          />
+          <Row
+            icon="server-outline"
+            label="Veri Kaynakları"
+            subtitle="Yahoo Finance · CoinGecko · ExchangeRate · TEFAS"
+            right={null}
+          />
+          <Row
+            icon="mail-outline"
+            label="İletişim"
+            subtitle={CONTACT_EMAIL}
+            onPress={() => Linking.openURL(`mailto:${CONTACT_EMAIL}`)}
+          />
+          {/* Play Store yayınında gerçek URL bağlanacak (yer tutucu) */}
+          <Row
+            icon="globe-outline"
+            label="Gizlilik Politikası (Web)"
+            right={<Text style={[styles.rowValue, { color: ds.textTertiary }]}>Yakında</Text>}
+          />
+        </Section>
 
-        {/* Disclaimer */}
-        <View style={[styles.disclaimerCard, { backgroundColor: colors.surface }]}>
-          <Ionicons name="alert-circle" size={24} color={primary} />
-          <Text style={[styles.disclaimerText, { color: colors.textSecondary }]}>
-            Bu uygulama yatırım tavsiyesi vermez. Fiyatlar üçüncü taraf kaynaklardan alınır ve 
+        {/* Yatırım tavsiyesi değildir notu */}
+        <View style={[styles.disclaimerCard, { backgroundColor: ds.accent + '0D', borderColor: ds.accent + '2E' }]}>
+          <Ionicons name="alert-circle" size={18} color={ds.accent} />
+          <Text style={[styles.disclaimerText, { color: ds.textSecondary }]}>
+            Bu uygulama yatırım tavsiyesi vermez. Fiyatlar üçüncü taraf kaynaklardan alınır ve
             gecikmeli veya hatalı olabilir.
           </Text>
         </View>
 
-        <View style={{ height: 100 }} />
+        {/* Reklam: içeriğin en sonunda, sabit değil */}
+        <AdSlot borderColor={ds.border} textColor={ds.textTertiary} />
+
+        <View style={{ height: 96 }} />
       </ScrollView>
 
-      {/* Legal Content Modal */}
+      {/* Hukuki metin modalı */}
       <Modal
         visible={modalVisible}
         animationType="slide"
         transparent={true}
         onRequestClose={() => setModalVisible(false)}
       >
-        <View style={styles.modalOverlay}>
-          <View style={[styles.modalContent, { backgroundColor: colors.background }]}>
-            {/* Modal Header */}
-            <View style={[styles.modalHeader, { borderBottomColor: colors.border }]}>
+        <View style={[styles.modalOverlay, { backgroundColor: ds.overlay }]}>
+          <View style={[styles.modalContent, { backgroundColor: ds.background }]}>
+            <View style={[styles.modalHeader, { borderBottomColor: ds.border }]}>
               <View style={styles.modalHeaderLeft}>
-                <Ionicons 
-                  name={modalContent?.icon} 
-                  size={24} 
-                  color={primary} 
-                />
-                <Text style={[styles.modalTitle, { color: colors.text }]}>
-                  {modalContent?.title}
-                </Text>
+                <Ionicons name={modalContent?.icon} size={22} color={ds.accent} />
+                <Text style={[styles.modalTitle, { color: ds.text }]}>{modalContent?.title}</Text>
               </View>
-              <TouchableOpacity 
+              <TouchableOpacity
                 onPress={() => setModalVisible(false)}
-                style={[styles.modalCloseButton, { backgroundColor: colors.surface }]}
+                style={[styles.modalCloseButton, { backgroundColor: ds.surface, borderColor: ds.border }]}
               >
-                <Ionicons name="close" size={24} color={colors.text} />
+                <Ionicons name="close" size={22} color={ds.text} />
               </TouchableOpacity>
             </View>
 
-            {/* Modal Body */}
-            <ScrollView 
-              style={styles.modalBody}
-              showsVerticalScrollIndicator={false}
-            >
-              <Text style={[styles.modalText, { color: colors.text }]}>
-                {modalContent?.content}
-              </Text>
-              <View style={{ height: 40 }} />
+            <ScrollView style={styles.modalBody} showsVerticalScrollIndicator={false}>
+              <Text style={[styles.modalText, { color: ds.text }]}>{modalContent?.content}</Text>
+              <View style={{ height: Spacing.xl }} />
             </ScrollView>
 
-            {/* Modal Footer */}
-            <View style={[styles.modalFooter, { borderTopColor: colors.border }]}>
-              <TouchableOpacity 
-                style={[styles.modalButton, { backgroundColor: primary }]}
+            <View style={[styles.modalFooter, { borderTopColor: ds.border }]}>
+              <TouchableOpacity
+                style={[styles.modalButton, { backgroundColor: ds.accent }]}
                 onPress={() => setModalVisible(false)}
               >
-                <Text style={styles.modalButtonText}>Anladım</Text>
+                <Text style={[styles.modalButtonText, { color: ds.onAccent }]}>Anladım</Text>
               </TouchableOpacity>
             </View>
           </View>
         </View>
       </Modal>
 
-      {/* Color Picker Modal */}
+      {/* Tema rengi modalı */}
       <Modal
         visible={colorModalVisible}
         animationType="slide"
         transparent={true}
         onRequestClose={() => setColorModalVisible(false)}
       >
-        <TouchableOpacity 
-          style={styles.modalOverlay} 
-          activeOpacity={1} 
+        <TouchableOpacity
+          style={[styles.modalOverlay, { backgroundColor: ds.overlay }]}
+          activeOpacity={1}
           onPress={() => setColorModalVisible(false)}
         >
-          <View style={[styles.colorModalContent, { backgroundColor: colors.surface }]}>
-            <Text style={[styles.colorModalTitle, { color: colors.text }]}>
-              Tema Rengi Seçin
-            </Text>
-            
+          <View style={[styles.colorModalContent, { backgroundColor: ds.surfaceRaised }]}>
+            <Text style={[styles.colorModalTitle, { color: ds.text }]}>Tema Rengi Seçin</Text>
+
             {!isPremium && (
-              <View style={[styles.premiumBanner, { backgroundColor: '#F59E0B' + '20' }]}>
-                <Ionicons name="star" size={16} color="#F59E0B" />
-                <Text style={[styles.premiumBannerText, { color: '#F59E0B' }]}>
+              <View style={[styles.premiumBanner, { backgroundColor: ds.warning + '20' }]}>
+                <Ionicons name="star" size={16} color={ds.warning} />
+                <Text style={[styles.premiumBannerText, { color: ds.warning }]}>
                   Premium ile tüm renkleri aç!
                 </Text>
               </View>
@@ -691,13 +649,11 @@ const SettingsScreen = () => {
               ))}
             </View>
 
-            
-
             <TouchableOpacity
-              style={[styles.colorModalClose, { backgroundColor: primary }]}
+              style={[styles.colorModalClose, { backgroundColor: ds.accent }]}
               onPress={() => setColorModalVisible(false)}
             >
-              <Text style={styles.colorModalCloseText}>Tamam</Text>
+              <Text style={[styles.colorModalCloseText, { color: ds.onAccent }]}>Tamam</Text>
             </TouchableOpacity>
           </View>
         </TouchableOpacity>
@@ -707,237 +663,155 @@ const SettingsScreen = () => {
 };
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-  },
+  container: { flex: 1 },
   header: {
     paddingHorizontal: Spacing.md,
     paddingTop: Spacing.xl,
-    paddingBottom: Spacing.md,
+    paddingBottom: Spacing.sm,
   },
-  title: {
-    ...Typography.h1,
-  },
-  scrollContent: {
-    paddingHorizontal: Spacing.md,
-  },
-  group: {
-    marginBottom: Spacing.lg,
-  },
+  title: { ...Typography.h1 },
+  scroll: { paddingHorizontal: Spacing.md, paddingTop: Spacing.xs },
+
+  group: { marginBottom: Spacing.lg },
   groupTitle: {
-    ...Typography.bodySmall,
-    fontWeight: '600',
-    marginBottom: Spacing.sm,
-    letterSpacing: 0.5,
+    ...Typography.caption,
+    fontWeight: '700',
+    letterSpacing: 0.6,
+    marginBottom: Spacing.xs,
+    marginLeft: Spacing.xxs,
   },
-  groupCard: {
-    borderRadius: BorderRadius.lg,
+  card: {
+    borderRadius: Radius.md,
+    borderWidth: 1,
     overflow: 'hidden',
   },
-  groupFootnote: {
+  footnote: {
     ...Typography.caption,
     marginTop: Spacing.xs,
-    marginHorizontal: Spacing.xs,
+    marginHorizontal: Spacing.xxs,
     lineHeight: 16,
   },
-  settingItem: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    padding: Spacing.md,
-  },
-  settingLeft: {
+
+  row: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: Spacing.sm,
-    flex: 1,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.sm,
+    minHeight: A11y.minTouchTarget + 12,
   },
-  iconContainer: {
-    width: 40,
-    height: 40,
-    borderRadius: BorderRadius.sm,
+  rowIcon: {
+    width: 38,
+    height: 38,
+    borderRadius: Radius.sm,
+    alignItems: 'center',
     justifyContent: 'center',
-    alignItems: 'center',
   },
-  settingLabel: {
-    ...Typography.body,
-  },
-  settingSubtitle: {
-    fontSize: 12,
-    marginTop: 2,
-  },
-  settingRight: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: Spacing.xs,
-  },
-  settingValue: {
-    ...Typography.bodySmall,
-  },
-  divider: {
-    height: 1,
-    marginLeft: 72,
-  },
-  colorPreview: {
-    width: 24,
-    height: 24,
-    borderRadius: 12,
-  },
-  currencySelector: {
-    flexDirection: 'row',
-    gap: 8,
-  },
+  rowText: { flex: 1 },
+  rowLabel: { ...Typography.body },
+  rowSubtitle: { ...Typography.caption, marginTop: 1 },
+  rowValue: { ...Typography.bodySmall },
+  rowRight: { flexDirection: 'row', alignItems: 'center', gap: Spacing.xs },
+  colorDot: { width: 22, height: 22, borderRadius: Radius.full },
+
+  currencySelector: { flexDirection: 'row', gap: Spacing.xs },
   currencyButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+    width: A11y.minTouchTarget,
+    height: A11y.minTouchTarget,
+    borderRadius: Radius.full,
     borderWidth: 1,
-    justifyContent: 'center',
     alignItems: 'center',
+    justifyContent: 'center',
   },
-  currencyButtonText: {
-    fontSize: 16,
-    fontWeight: '600',
-  },
+  currencyButtonText: { ...Typography.body, fontWeight: '600' },
+
   disclaimerCard: {
     flexDirection: 'row',
-    padding: Spacing.md,
-    borderRadius: BorderRadius.lg,
-    gap: Spacing.sm,
+    gap: Spacing.xs,
+    padding: Spacing.sm,
+    borderRadius: Radius.sm,
+    borderWidth: 1,
     alignItems: 'flex-start',
   },
-  disclaimerText: {
-    ...Typography.bodySmall,
-    flex: 1,
-    lineHeight: 20,
-  },
-  // Modal Styles
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.5)',
-    justifyContent: 'flex-end',
-  },
+  disclaimerText: { ...Typography.caption, flex: 1, lineHeight: 16 },
+
+  // Modallar
+  modalOverlay: { flex: 1, justifyContent: 'flex-end' },
   modalContent: {
     height: '90%',
-    borderTopLeftRadius: BorderRadius.xl,
-    borderTopRightRadius: BorderRadius.xl,
+    borderTopLeftRadius: Radius.lg,
+    borderTopRightRadius: Radius.lg,
   },
   modalHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    padding: Spacing.lg,
+    padding: Spacing.md,
     borderBottomWidth: 1,
   },
-  modalHeaderLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: Spacing.sm,
-  },
-  modalTitle: {
-    fontSize: 20,
-    fontWeight: '700',
-  },
+  modalHeaderLeft: { flexDirection: 'row', alignItems: 'center', gap: Spacing.xs },
+  modalTitle: { ...Typography.h3 },
   modalCloseButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+    width: A11y.minTouchTarget,
+    height: A11y.minTouchTarget,
+    borderRadius: Radius.md,
+    borderWidth: 1,
+    alignItems: 'center',
     justifyContent: 'center',
-    alignItems: 'center',
   },
-  modalBody: {
-    flex: 1,
-    padding: Spacing.lg,
-  },
-  modalText: {
-    fontSize: 14,
-    lineHeight: 22,
-  },
-  modalFooter: {
-    padding: Spacing.lg,
-    borderTopWidth: 1,
-  },
+  modalBody: { flex: 1, padding: Spacing.md },
+  modalText: { ...Typography.bodySmall, lineHeight: 22 },
+  modalFooter: { padding: Spacing.md, borderTopWidth: 1 },
   modalButton: {
-    padding: Spacing.md,
-    borderRadius: BorderRadius.md,
+    minHeight: 52,
+    borderRadius: Radius.md,
     alignItems: 'center',
+    justifyContent: 'center',
   },
-  modalButtonText: {
-    color: '#FFFFFF',
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  // Color Picker Modal
+  modalButtonText: { ...Typography.body, fontWeight: '700' },
+
   colorModalContent: {
-    borderTopLeftRadius: BorderRadius.xl,
-    borderTopRightRadius: BorderRadius.xl,
+    borderTopLeftRadius: Radius.lg,
+    borderTopRightRadius: Radius.lg,
     padding: Spacing.lg,
     paddingBottom: Spacing.xxl,
   },
-  colorModalTitle: {
-    fontSize: 20,
-    fontWeight: '700',
-    textAlign: 'center',
-    marginBottom: Spacing.lg,
-  },
+  colorModalTitle: { ...Typography.h3, textAlign: 'center', marginBottom: Spacing.lg },
   premiumBanner: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     padding: Spacing.sm,
-    borderRadius: BorderRadius.md,
+    borderRadius: Radius.sm,
     marginBottom: Spacing.lg,
     gap: Spacing.xs,
   },
-  premiumBannerText: {
-    fontSize: 13,
-    fontWeight: '600',
-  },
+  premiumBannerText: { ...Typography.caption, fontWeight: '600' },
   colorGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     justifyContent: 'center',
     gap: Spacing.md,
-    marginBottom: Spacing.sm,
+    marginBottom: Spacing.md,
   },
   colorOption: {
     width: 56,
     height: 56,
-    borderRadius: 28,
+    borderRadius: Radius.full,
     justifyContent: 'center',
     alignItems: 'center',
   },
   colorOptionSelected: {
     borderWidth: 3,
     borderColor: '#FFFFFF',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 8,
-  },
-  colorLabels: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    justifyContent: 'center',
-    gap: Spacing.md,
-    marginBottom: Spacing.lg,
-  },
-  colorLabel: {
-    width: 56,
-    fontSize: 10,
-    textAlign: 'center',
   },
   colorModalClose: {
-    padding: Spacing.md,
-    borderRadius: BorderRadius.md,
+    minHeight: 52,
+    borderRadius: Radius.md,
     alignItems: 'center',
+    justifyContent: 'center',
   },
-  colorModalCloseText: {
-    color: '#FFFFFF',
-    fontSize: 16,
-    fontWeight: '600',
-  },
+  colorModalCloseText: { ...Typography.body, fontWeight: '700' },
 });
 
 export default SettingsScreen;
