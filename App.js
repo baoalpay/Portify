@@ -13,6 +13,7 @@ import { Palette } from './constants/designSystem';
 import AddHoldingScreen from './screens/AddHoldingScreen';
 import HoldingDetailScreen from './screens/HoldingDetailScreen';
 import SplashScreen from './components/SplashScreen';
+import ErrorBoundary from './components/ErrorBoundary';
 import OnboardingScreen, { checkOnboardingCompleted } from './components/OnboardingScreen';
 import usePortfolioStore from './store/PortfolioStore';
 import { migrationRepository } from './repositories/migrationRepository';
@@ -245,8 +246,10 @@ function AppContent() {
 
 export default function App() {
   return (
-    <ThemeProvider>
-      <AppContent />
-    </ThemeProvider>
+    <ErrorBoundary>
+      <ThemeProvider>
+        <AppContent />
+      </ThemeProvider>
+    </ErrorBoundary>
   );
 }
