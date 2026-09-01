@@ -1,4 +1,15 @@
-import React, { useState, useEffect, useMemo } from 'react';
+// Varlık Ekle / Düzenle — yeniden tasarım (Portföy/Varlıklarım ile aynı dil)
+//
+// Bu ekranda reklam YOK (tasarım kuralı: form ekranlarında reklam olmaz).
+// Davranış kuralları:
+// - Sayısal alanlar sayı klavyesi açar; ondalık için hem virgül hem nokta
+//   kabul edilir (Türkçe düzen), kayıtta noktaya normalize edilir.
+// - Hata mesajları alanın ALTINDA görünür; doğrulama için uyarı penceresi yok.
+// - Kaydet, form geçerli olana dek pasiftir; altındaki satır nedenini söyler.
+// - Yarım doldurulup çıkılırsa "kaydedilmemiş değişiklikler" onayı sorulur.
+// - Fon akışı: TEFAS arama önerileri, tam ad, onEndEditing emniyeti korunur.
+
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import {
   View,
   Text,
@@ -8,10 +19,18 @@ import {
   TextInput,
   StatusBar,
   Switch,
+  Alert,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import * as Haptics from 'expo-haptics';
 import { useTheme } from '../context/ThemeContext';
-import { Spacing, BorderRadius, Typography, Shadows } from '../constants/theme';
+import {
+  Palette,
+  Spacing,
+  Radius,
+  Typography,
+  A11y,
+} from '../constants/designSystem';
 import usePortfolioStore from '../store/PortfolioStore';
 import { setAlert, getAlert, requestNotificationPermissions } from '../services/notificationService';
 import { tefasRepository } from '../repositories/tefasRepository';
@@ -39,38 +58,75 @@ const CURRENCY_LIST = [
   { code: 'MXN', name: 'Meksika Pesosu' },
 ];
 
+const ASSET_TYPES = [
+  { id: 'stock', name: 'Hisse Senedi', icon: 'trending-up' },
+  { id: 'fund', name: 'Fon/ETF', icon: 'pie-chart' },
+  { id: 'crypto', name: 'Kripto', icon: 'logo-bitcoin' },
+  { id: 'currency', name: 'Döviz', icon: 'cash' },
+  { id: 'gold', name: 'Altın', icon: 'medal' },
+  { id: 'silver', name: 'Gümüş', icon: 'medal-outline' },
+];
+
+// Sayısal giriş: yalnızca rakam + tek ondalık ayracı (virgül veya nokta)
+const sanitizeDecimal = (text) => {
+  let cleaned = String(text).replace(/[^0-9.,]/g, '');
+  const firstSep = cleaned.search(/[.,]/);
+  if (firstSep !== -1) {
+    cleaned =
+      cleaned.slice(0, firstSep + 1) + cleaned.slice(firstSep + 1).replace(/[.,]/g, '');
+  }
+  return cleaned;
+};
+
+// "12,5" -> 12.5 (kayıtta noktaya normalize edilir)
+const toNumber = (text) => parseFloat(String(text).replace(',', '.'));
+const isPositive = (text) => {
+  const n = toNumber(text);
+  return isFinite(n) && n > 0;
+};
+const toDotString = (text) => String(toNumber(text));
+
 const AddHoldingScreen = ({ navigation, route }) => {
-  const { colors, isDark, primary } = useTheme();
+  const { isDark } = useTheme();
+  const ds = isDark ? Palette.dark : Palette.light;
+
   const addHolding = usePortfolioStore((state) => state.addHolding);
   const updateHolding = usePortfolioStore((state) => state.updateHolding);
-  
+
   const editMode = route.params?.holding ? true : false;
   const existingHolding = route.params?.holding;
-  const presetType = route.params?.presetType; // hızlı ekleme kısayolundan gelen tür
+  const presetType = route.params?.presetType; // hızlı ekleme kısayolundan
 
   const [selectedType, setSelectedType] = useState(
     editMode ? existingHolding.type : presetType || null
   );
 
-  // Ekran açıkken farklı bir kısayoldan tekrar gelinirse türü güncelle
   useEffect(() => {
     if (!editMode && presetType) {
       setSelectedType(presetType);
     }
   }, [presetType, editMode]);
+
   const [formData, setFormData] = useState({
     symbol: editMode ? existingHolding.symbol : '',
-    quantity: editMode ? existingHolding.quantity.toString() : '',
-    avgCost: editMode ? existingHolding.avgCost.toString() : '',
-    currentPrice: editMode && existingHolding.currentPrice ? existingHolding.currentPrice.toString() : '',
+    quantity: editMode ? String(existingHolding.quantity) : '',
+    avgCost: editMode ? String(existingHolding.avgCost) : '',
+    currentPrice:
+      editMode && existingHolding.currentPrice ? String(existingHolding.currentPrice) : '',
   });
-  
-  const [currencySearch, setCurrencySearch] = useState(editMode && existingHolding.type === 'currency' ?
-    CURRENCY_LIST.find(c => c.code === existingHolding.symbol)?.name || '' : '');
+
+  // Hangi alanlara dokunuldu (hata mesajı ancak dokunulduktan sonra görünür)
+  const [touched, setTouched] = useState({});
+  const touch = (field) => setTouched((t) => ({ ...t, [field]: true }));
+
+  const [currencySearch, setCurrencySearch] = useState(
+    editMode && existingHolding.type === 'currency'
+      ? CURRENCY_LIST.find((c) => c.code === existingHolding.symbol)?.name || ''
+      : ''
+  );
   const [showCurrencyList, setShowCurrencyList] = useState(false);
 
-  // Fon arama (liste TEFAS'tan bir kez çekilip önbelleklenir; liste yoksa
-  // düz kod girişi çalışmaya devam eder — manuel yol birinci sınıftır)
+  // Fon arama (TEFAS listesi önbellekten; liste yoksa düz giriş sürer)
   const [fundList, setFundList] = useState(null);
   const [showFundList, setShowFundList] = useState(false);
   const [fundFullName, setFundFullName] = useState(
@@ -85,60 +141,154 @@ const AddHoldingScreen = ({ navigation, route }) => {
     }
   }, [selectedType]);
 
-  // Öneriler yalnızca sorgu/liste değişince hesaplanır (her render'da
-  // 2000+ fonluk tarama koşturmamak için)
   const fundSuggestions = useMemo(() => {
     if (selectedType !== 'fund' || !fundList) return [];
     return tefasRepository.searchFunds(formData.symbol, fundList);
   }, [selectedType, formData.symbol, fundList]);
 
-  // Hedef fiyat state'leri
+  // Hedef fiyat alarmı
   const [targetEnabled, setTargetEnabled] = useState(false);
   const [targetPrice, setTargetPrice] = useState('');
-  const [targetType, setTargetType] = useState('above'); // 'above' veya 'below'
+  const [targetType, setTargetType] = useState('above');
+  const initialAlarmRef = useRef({ enabled: false, price: '', type: 'above' });
 
-  // Edit modda mevcut alarmı yükle
   useEffect(() => {
     if (editMode && existingHolding) {
-      loadExistingAlert();
+      getAlert(existingHolding.id).then((alert) => {
+        if (alert) {
+          setTargetEnabled(true);
+          setTargetPrice(String(alert.targetPrice));
+          setTargetType(alert.targetType || 'above');
+          initialAlarmRef.current = {
+            enabled: true,
+            price: String(alert.targetPrice),
+            type: alert.targetType || 'above',
+          };
+        }
+      });
     }
-  }, [editMode, existingHolding]);
-
-  const loadExistingAlert = async () => {
-    const alert = await getAlert(existingHolding.id);
-    if (alert) {
-      setTargetEnabled(true);
-      setTargetPrice(alert.targetPrice.toString());
-      setTargetType(alert.targetType || 'above');
-    }
-  };
-
-  const assetTypes = [
-    { id: 'stock', name: 'Hisse Senedi', icon: 'trending-up', color: '#6366F1' },
-    { id: 'fund', name: 'Fon/ETF', icon: 'pie-chart', color: '#8B5CF6' },
-    { id: 'crypto', name: 'Kripto', icon: 'logo-bitcoin', color: '#EC4899' },
-    { id: 'currency', name: 'Döviz', icon: 'cash', color: '#22C55E' },
-    { id: 'gold', name: 'Altın', icon: 'medal', color: '#F59E0B' },
-    { id: 'silver', name: 'Gümüş', icon: 'medal-outline', color: '#94A3B8' },
-  ];
+  }, []);
 
   const needsManualPrice = selectedType === 'fund';
   const noSymbolRequired = selectedType === 'gold' || selectedType === 'silver';
 
-  const filteredCurrencies = CURRENCY_LIST.filter(c =>
-    c.code.toLowerCase().includes(currencySearch.toLowerCase()) ||
-    c.name.toLowerCase().includes(currencySearch.toLowerCase())
+  const filteredCurrencies = CURRENCY_LIST.filter(
+    (c) =>
+      c.code.toLocaleLowerCase('tr').includes(currencySearch.toLocaleLowerCase('tr')) ||
+      c.name.toLocaleLowerCase('tr').includes(currencySearch.toLocaleLowerCase('tr'))
   );
 
+  // ---- Doğrulama: alan bazlı hatalar + Kaydet'in pasiflik nedeni ----
+  const validation = useMemo(() => {
+    const errors = {};
+    let reason = null;
+
+    if (!selectedType) {
+      reason = 'Önce varlık türü seçin';
+      return { errors, reason };
+    }
+    if (!noSymbolRequired && !formData.symbol.trim()) {
+      errors.symbol = selectedType === 'fund' ? 'Fon kodu girin' : 'Sembol girin';
+      reason = reason || errors.symbol;
+    }
+    if (!formData.quantity.trim()) {
+      errors.quantity = 'Miktar girin';
+    } else if (!isPositive(formData.quantity)) {
+      errors.quantity = 'Geçerli bir miktar girin (0’dan büyük)';
+    }
+    if (errors.quantity) reason = reason || errors.quantity;
+
+    if (!formData.avgCost.trim()) {
+      errors.avgCost = 'Ortalama maliyet girin';
+    } else if (!isPositive(formData.avgCost)) {
+      errors.avgCost = 'Geçerli bir maliyet girin (0’dan büyük)';
+    }
+    if (errors.avgCost) reason = reason || errors.avgCost;
+
+    if (!editMode && needsManualPrice) {
+      if (!formData.currentPrice.trim()) {
+        errors.currentPrice = 'Fon için güncel fiyat girin';
+      } else if (!isPositive(formData.currentPrice)) {
+        errors.currentPrice = 'Geçerli bir fiyat girin (0’dan büyük)';
+      }
+      if (errors.currentPrice) reason = reason || errors.currentPrice;
+    } else if (formData.currentPrice.trim() && !isPositive(formData.currentPrice)) {
+      errors.currentPrice = 'Geçerli bir fiyat girin (0’dan büyük)';
+      reason = reason || errors.currentPrice;
+    }
+
+    if (targetEnabled) {
+      if (!targetPrice.trim()) {
+        errors.targetPrice = 'Hedef fiyat girin (veya alarmı kapatın)';
+      } else if (!isPositive(targetPrice)) {
+        errors.targetPrice = 'Geçerli bir hedef fiyat girin';
+      }
+      if (errors.targetPrice) reason = reason || errors.targetPrice;
+    }
+
+    return { errors, reason };
+  }, [selectedType, formData, targetEnabled, targetPrice, editMode, needsManualPrice, noSymbolRequired]);
+
+  const canSave = !validation.reason;
+
+  // ---- Kaydedilmemiş değişiklik koruması ----
+  const savedRef = useRef(false);
+
+  const isDirty = () => {
+    if (savedRef.current) return false;
+    if (!editMode) {
+      return !!(
+        formData.symbol ||
+        formData.quantity ||
+        formData.avgCost ||
+        formData.currentPrice ||
+        currencySearch ||
+        targetEnabled
+      );
+    }
+    const alarm = initialAlarmRef.current;
+    return (
+      formData.quantity !== String(existingHolding.quantity) ||
+      formData.avgCost !== String(existingHolding.avgCost) ||
+      formData.currentPrice !==
+        (existingHolding.currentPrice ? String(existingHolding.currentPrice) : '') ||
+      targetEnabled !== alarm.enabled ||
+      (targetEnabled && (targetPrice !== alarm.price || targetType !== alarm.type))
+    );
+  };
+
+  useEffect(() => {
+    const unsubscribe = navigation.addListener('beforeRemove', (e) => {
+      if (!isDirty()) return;
+      e.preventDefault();
+      Alert.alert(
+        'Kaydedilmemiş değişiklikler',
+        'Girdiğiniz bilgiler kaydedilmedi. Çıkmak istediğinize emin misiniz?',
+        [
+          { text: 'Kalmaya devam et', style: 'cancel' },
+          {
+            text: 'Çık',
+            style: 'destructive',
+            onPress: () => navigation.dispatch(e.data.action),
+          },
+        ]
+      );
+    });
+    return unsubscribe;
+  });
+
+  // ---- Kaydet ----
   const handleSave = async () => {
-    let holdingId = existingHolding?.id;
+    if (!canSave) return;
 
-    // Sembol kayıt anında normalize edilir (tuş vuruşunda değil — bkz. onChangeText notu)
     const normalizedSymbol = formData.symbol.trim().toUpperCase();
+    const resolvedFullName =
+      selectedType === 'fund' && fundFullName
+        ? fundFullName
+        : normalizedSymbol ||
+          (selectedType === 'gold' ? 'Altın' : selectedType === 'silver' ? 'Gümüş' : normalizedSymbol);
 
-    const resolvedFullName = selectedType === 'fund' && fundFullName
-      ? fundFullName
-      : normalizedSymbol || (selectedType === 'gold' ? 'Altın' : selectedType === 'silver' ? 'Gümüş' : normalizedSymbol);
+    let holdingId = existingHolding?.id;
 
     if (editMode) {
       const updates = {
@@ -146,15 +296,13 @@ const AddHoldingScreen = ({ navigation, route }) => {
           ? (selectedType === 'gold' ? 'GOLD' : 'SILVER')
           : normalizedSymbol,
         fullName: resolvedFullName,
-        quantity: formData.quantity,
-        avgCost: formData.avgCost,
+        quantity: toDotString(formData.quantity),
+        avgCost: toDotString(formData.avgCost),
       };
-      
-      if (formData.currentPrice) {
-        updates.currentPrice = formData.currentPrice;
+      if (formData.currentPrice.trim()) {
+        updates.currentPrice = toDotString(formData.currentPrice);
         updates.priceUpdatedAt = new Date().toISOString();
       }
-      
       await updateHolding(existingHolding.id, updates);
     } else {
       const holding = {
@@ -163,145 +311,140 @@ const AddHoldingScreen = ({ navigation, route }) => {
           ? (selectedType === 'gold' ? 'GOLD' : 'SILVER')
           : normalizedSymbol,
         fullName: resolvedFullName,
-        quantity: formData.quantity,
-        avgCost: formData.avgCost,
+        quantity: toDotString(formData.quantity),
+        avgCost: toDotString(formData.avgCost),
       };
-
-      if (needsManualPrice && formData.currentPrice) {
-        holding.currentPrice = formData.currentPrice;
+      if (needsManualPrice && formData.currentPrice.trim()) {
+        holding.currentPrice = toDotString(formData.currentPrice);
         holding.priceUpdatedAt = new Date().toISOString();
       }
-
-      const newHolding = await addHolding(holding);
-      holdingId = newHolding?.id;
+      const created = await addHolding(holding);
+      holdingId = created?.id;
     }
 
-    // Hedef fiyat alarmını kaydet
     if (holdingId) {
       if (targetEnabled && targetPrice) {
         await requestNotificationPermissions();
-        await setAlert(holdingId, parseFloat(targetPrice), targetType);
+        await setAlert(holdingId, toNumber(targetPrice), targetType);
       } else {
-        await setAlert(holdingId, null); // Alarmı kaldır
+        await setAlert(holdingId, null);
       }
     }
-    
+
+    savedRef.current = true;
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     navigation.goBack();
   };
 
-  const getInputLabel = () => {
+  const labels = useMemo(() => {
     switch (selectedType) {
-      case 'stock': 
+      case 'stock':
         return { symbol: 'Hisse Kodu', quantity: 'Lot Sayısı', cost: 'Ort. Maliyet (₺)', price: 'Güncel Fiyat (₺)', placeholder: 'Örn: THYAO' };
-      case 'fund': 
-        return { symbol: 'Fon Kodu', quantity: 'Adet', cost: 'Ort. Maliyet (₺)', price: 'Güncel Fiyat (₺)', placeholder: 'Örn: TI2' };
-      case 'crypto': 
+      case 'fund':
+        return { symbol: 'Fon Kodu', quantity: 'Adet', cost: 'Ort. Maliyet (₺)', price: 'Güncel Fiyat (₺)', placeholder: 'Kod veya ad ile arayın' };
+      case 'crypto':
         return { symbol: 'Kripto Kodu', quantity: 'Adet', cost: 'Ort. Maliyet (₺)', price: 'Güncel Fiyat (₺)', placeholder: 'Örn: BTC' };
-      case 'currency': 
-        return { symbol: 'Döviz', quantity: 'Miktar', cost: 'Ort. Kur (₺)', price: 'Güncel Kur (₺)', placeholder: 'Ara... (USD, Euro, İsviçre...)' };
-      case 'gold': 
+      case 'currency':
+        return { symbol: 'Döviz', quantity: 'Miktar', cost: 'Ort. Kur (₺)', price: 'Güncel Kur (₺)', placeholder: 'Ara... (USD, Euro...)' };
+      case 'gold':
         return { symbol: 'Altın', quantity: 'Gram', cost: 'Ort. Fiyat (₺/gr)', price: 'Güncel Fiyat (₺/gr)', placeholder: '' };
-      case 'silver': 
+      case 'silver':
         return { symbol: 'Gümüş', quantity: 'Gram', cost: 'Ort. Fiyat (₺/gr)', price: 'Güncel Fiyat (₺/gr)', placeholder: '' };
-      default: 
+      default:
         return { symbol: 'Sembol', quantity: 'Miktar', cost: 'Maliyet', price: 'Güncel Fiyat', placeholder: '' };
     }
-  };
+  }, [selectedType]);
 
-  const getPriceHint = () => {
-    if (selectedType === 'fund') {
-      return 'Fiyat, TEFAS\'tan günde bir kez otomatik güncellenir. Girdiğiniz fiyat, TEFAS\'a ulaşılamadığında kullanılır.';
-    }
-    return '';
-  };
+  const infoText = editMode
+    ? needsManualPrice
+      ? 'Fon fiyatı TEFAS’tan günlük çekilir; dilerseniz güncel fiyatı elle de girebilirsiniz.'
+      : 'Varlık bilgilerinizi güncelleyin. Sembol değiştirilemez.'
+    : needsManualPrice
+      ? 'Fon adı veya koduyla arama yapabilirsiniz. Fiyat TEFAS’tan günlük güncellenir; girdiğiniz fiyat yedek olarak kullanılır.'
+      : 'Güncel fiyatlar otomatik olarak güncellenecektir. Sadece maliyet bilgilerinizi girin.';
 
-  const getInfoText = () => {
-    if (editMode) {
-      if (needsManualPrice) {
-        return 'Fon fiyatı TEFAS\'tan günlük çekilir; dilerseniz güncel fiyatı elle de girebilirsiniz.';
-      }
-      return 'Varlık bilgilerinizi güncelleyin. Sembol değiştirilemez.';
-    } else {
-      if (needsManualPrice) {
-        return 'Fon adı veya koduyla arama yapabilirsiniz. Fiyat TEFAS\'tan günlük güncellenir; girdiğiniz fiyat yedek olarak kullanılır.';
-      }
-      return 'Güncel fiyatlar otomatik olarak güncellenecektir. Sadece maliyet bilgilerinizi girin.';
-    }
-  };
+  const FieldError = ({ field }) =>
+    touched[field] && validation.errors[field] ? (
+      <Text style={[styles.fieldError, { color: ds.loss }]}>{validation.errors[field]}</Text>
+    ) : null;
 
-  const labels = getInputLabel();
-
-  const isFormValid = () => {
-    if (!selectedType) return false;
-    if (!formData.quantity || !formData.avgCost) return false;
-    if (!noSymbolRequired && !formData.symbol) return false;
-    if (!editMode && needsManualPrice && !formData.currentPrice) return false;
-    return true;
-  };
+  const inputStyle = (field) => [
+    styles.input,
+    {
+      backgroundColor: ds.surface,
+      color: ds.text,
+      borderColor: touched[field] && validation.errors[field] ? ds.loss : ds.border,
+    },
+  ];
 
   return (
-    <View style={[styles.container, { backgroundColor: colors.background }]}>
-      <StatusBar
-        barStyle={isDark ? 'light-content' : 'dark-content'}
-        backgroundColor={colors.background}
-      />
+    <View style={[styles.container, { backgroundColor: ds.background }]}>
+      <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} backgroundColor={ds.background} />
 
-      <View style={[styles.header, { borderBottomColor: colors.border }]}>
-        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}>
-          <Ionicons name="arrow-back" size={24} color={colors.text} />
+      {/* Başlık */}
+      <View style={styles.header}>
+        <TouchableOpacity
+          style={[styles.iconButton, { backgroundColor: ds.surface, borderColor: ds.border }]}
+          onPress={() => navigation.goBack()}
+        >
+          <Ionicons name="arrow-back" size={22} color={ds.text} />
         </TouchableOpacity>
-        <Text style={[styles.headerTitle, { color: colors.text }]}>
+        <Text style={[styles.headerTitle, { color: ds.text }]}>
           {editMode ? 'Varlık Düzenle' : 'Varlık Ekle'}
         </Text>
-        <View style={{ width: 40 }} />
+        <View style={{ width: A11y.minTouchTarget }} />
       </View>
 
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled">
-        <Text style={[styles.sectionTitle, { color: colors.text }]}>Varlık Türü Seçin</Text>
-        
+      <ScrollView
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={styles.scroll}
+        keyboardShouldPersistTaps="handled"
+      >
+        <Text style={[styles.sectionTitle, { color: ds.text }]}>Varlık Türü</Text>
         <View style={styles.typeGrid}>
-          {assetTypes.map((type) => (
-            <TouchableOpacity
-              key={type.id}
-              style={[
-                styles.typeCard,
-                { backgroundColor: colors.surface },
-                selectedType === type.id && { borderColor: type.color, borderWidth: 2 },
-                editMode && styles.typeCardDisabled,
-                Shadows.small,
-              ]}
-              onPress={() => !editMode && setSelectedType(type.id)}
-              activeOpacity={editMode ? 1 : 0.7}
-              disabled={editMode}
-            >
-              <View style={[styles.typeIcon, { backgroundColor: type.color + '15' }]}>
-                <Ionicons name={type.icon} size={28} color={type.color} />
-              </View>
-              <Text style={[styles.typeName, { color: colors.text }]}>{type.name}</Text>
-            </TouchableOpacity>
-          ))}
+          {ASSET_TYPES.map((type) => {
+            const selected = selectedType === type.id;
+            return (
+              <TouchableOpacity
+                key={type.id}
+                style={[
+                  styles.typeCard,
+                  { backgroundColor: ds.surface, borderColor: selected ? ds.accent : ds.border },
+                  selected && { backgroundColor: ds.accent + '0D' },
+                  editMode && !selected && { opacity: 0.45 },
+                ]}
+                onPress={() => {
+                  if (!editMode) {
+                    Haptics.selectionAsync();
+                    setSelectedType(type.id);
+                  }
+                }}
+                activeOpacity={editMode ? 1 : 0.7}
+                disabled={editMode}
+              >
+                <View style={[styles.typeIcon, { backgroundColor: ds.accent + '14' }]}>
+                  <Ionicons name={type.icon} size={24} color={ds.accent} />
+                </View>
+                <Text style={[styles.typeName, { color: ds.text }]}>{type.name}</Text>
+              </TouchableOpacity>
+            );
+          })}
         </View>
 
         {selectedType && (
           <>
-            <Text style={[styles.sectionTitle, { color: colors.text, marginTop: Spacing.xl }]}>
-              Bilgileri Girin
+            <Text style={[styles.sectionTitle, { color: ds.text, marginTop: Spacing.xl }]}>
+              Bilgiler
             </Text>
 
-            {/* Döviz için arama listeli input */}
+            {/* Döviz: aranabilir liste */}
             {selectedType === 'currency' && (
-              <View style={styles.inputGroup}>
-                <Text style={[styles.inputLabel, { color: colors.textSecondary }]}>
-                  {labels.symbol}
-                </Text>
+              <View style={styles.field}>
+                <Text style={[styles.label, { color: ds.textSecondary }]}>{labels.symbol}</Text>
                 <TextInput
-                  style={[
-                    styles.input,
-                    { backgroundColor: colors.surface, color: colors.text, borderColor: colors.border },
-                    editMode && styles.inputDisabled
-                  ]}
+                  style={[...inputStyle('symbol'), editMode && styles.inputDisabled]}
                   placeholder={labels.placeholder}
-                  placeholderTextColor={colors.textSecondary}
+                  placeholderTextColor={ds.textTertiary}
                   value={formData.symbol ? `${formData.symbol} - ${currencySearch}` : currencySearch}
                   onChangeText={(text) => {
                     if (!editMode) {
@@ -311,22 +454,24 @@ const AddHoldingScreen = ({ navigation, route }) => {
                     }
                   }}
                   onFocus={() => !editMode && setShowCurrencyList(true)}
+                  onBlur={() => touch('symbol')}
                   editable={!editMode}
                 />
+                <FieldError field="symbol" />
                 {showCurrencyList && !editMode && filteredCurrencies.length > 0 && !formData.symbol && (
-                  <View style={[styles.currencyList, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+                  <View style={[styles.suggestList, { backgroundColor: ds.surface, borderColor: ds.border }]}>
                     {filteredCurrencies.slice(0, 5).map((currency) => (
                       <TouchableOpacity
                         key={currency.code}
-                        style={[styles.currencyItem, { borderBottomColor: colors.border }]}
+                        style={[styles.suggestItem, { borderBottomColor: ds.border }]}
                         onPress={() => {
                           setFormData({ ...formData, symbol: currency.code });
                           setCurrencySearch(currency.name);
                           setShowCurrencyList(false);
                         }}
                       >
-                        <Text style={[styles.currencyCode, { color: colors.text }]}>{currency.code}</Text>
-                        <Text style={[styles.currencyName, { color: colors.textSecondary }]}>{currency.name}</Text>
+                        <Text style={[styles.suggestCode, { color: ds.text }]}>{currency.code}</Text>
+                        <Text style={[styles.suggestName, { color: ds.textSecondary }]}>{currency.name}</Text>
                       </TouchableOpacity>
                     ))}
                   </View>
@@ -334,27 +479,18 @@ const AddHoldingScreen = ({ navigation, route }) => {
               </View>
             )}
 
-            {/* Diğer türler için normal input */}
+            {/* Sembol / fon kodu */}
             {!noSymbolRequired && selectedType !== 'currency' && (
-              <View style={styles.inputGroup}>
-                <Text style={[styles.inputLabel, { color: colors.textSecondary }]}>
-                  {labels.symbol}
-                </Text>
+              <View style={styles.field}>
+                <Text style={[styles.label, { color: ds.textSecondary }]}>{labels.symbol}</Text>
                 <TextInput
-                  style={[
-                    styles.input,
-                    { backgroundColor: colors.surface, color: colors.text, borderColor: colors.border },
-                    editMode && styles.inputDisabled
-                  ]}
+                  style={[...inputStyle('symbol'), editMode && styles.inputDisabled]}
                   placeholder={labels.placeholder}
-                  placeholderTextColor={colors.textSecondary}
+                  placeholderTextColor={ds.textTertiary}
                   value={formData.symbol}
                   onChangeText={(text) => {
-                    // DİKKAT: burada toUpperCase() YAPMA. Kontrollü alana her tuşta
-                    // dönüştürülmüş değer geri itmek, hızlı yazımda native metin ile
-                    // JS durumunu ayrıştırır (RN'in bilinen kontrollü-girdi tuzağı).
-                    // Büyük harfe çevirme kayıt anında yapılır; klavye zaten
-                    // autoCapitalize="characters" ile büyük yazar.
+                    // Tuş vuruşunda dönüşüm yok (kontrollü girdi tuzağı) —
+                    // büyük harf kayıt anında uygulanır
                     setFormData({ ...formData, symbol: text });
                     if (selectedType === 'fund') {
                       setShowFundList(true);
@@ -362,9 +498,8 @@ const AddHoldingScreen = ({ navigation, route }) => {
                     }
                   }}
                   onFocus={() => selectedType === 'fund' && !editMode && setShowFundList(true)}
+                  onBlur={() => touch('symbol')}
                   onEndEditing={(e) => {
-                    // Emniyet kemeri: herhangi bir nedenle native metin ile JS durumu
-                    // ayrışırsa (kaçan değişiklik olayı), düzenleme bitince eşitle
                     const nativeText = e?.nativeEvent?.text ?? '';
                     setFormData((prev) =>
                       prev.symbol === nativeText ? prev : { ...prev, symbol: nativeText }
@@ -373,26 +508,29 @@ const AddHoldingScreen = ({ navigation, route }) => {
                   autoCapitalize="characters"
                   editable={!editMode}
                 />
+                <FieldError field="symbol" />
                 {selectedType === 'fund' && fundFullName !== '' && (
-                  <Text style={[styles.fundNameHint, { color: colors.textSecondary }]} numberOfLines={1}>
+                  <Text style={[styles.fundName, { color: ds.textSecondary }]} numberOfLines={1}>
                     {fundFullName}
                   </Text>
                 )}
                 {selectedType === 'fund' && showFundList && !editMode && fundList &&
-                  formData.symbol.length > 0 && fundFullName === '' && (
-                  <View style={[styles.currencyList, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+                  formData.symbol.length > 0 && fundFullName === '' && fundSuggestions.length > 0 && (
+                  <View style={[styles.suggestList, { backgroundColor: ds.surface, borderColor: ds.border }]}>
                     {fundSuggestions.map((fund) => (
                       <TouchableOpacity
                         key={fund.code}
-                        style={[styles.currencyItem, { borderBottomColor: colors.border }]}
+                        style={[styles.suggestItem, { borderBottomColor: ds.border }]}
                         onPress={() => {
                           setFormData({ ...formData, symbol: fund.code });
                           setFundFullName(fund.name);
                           setShowFundList(false);
                         }}
                       >
-                        <Text style={[styles.currencyCode, { color: colors.text }]}>{fund.code}</Text>
-                        <Text style={[styles.currencyName, { color: colors.textSecondary }]} numberOfLines={1}>{fund.name}</Text>
+                        <Text style={[styles.suggestCode, { color: ds.text }]}>{fund.code}</Text>
+                        <Text style={[styles.suggestName, { color: ds.textSecondary }]} numberOfLines={1}>
+                          {fund.name}
+                        </Text>
                       </TouchableOpacity>
                     ))}
                   </View>
@@ -400,145 +538,127 @@ const AddHoldingScreen = ({ navigation, route }) => {
               </View>
             )}
 
-            <View style={styles.inputGroup}>
-              <Text style={[styles.inputLabel, { color: colors.textSecondary }]}>
-                {labels.quantity}
-              </Text>
+            {/* Miktar */}
+            <View style={styles.field}>
+              <Text style={[styles.label, { color: ds.textSecondary }]}>{labels.quantity}</Text>
               <TextInput
-                style={[styles.input, { backgroundColor: colors.surface, color: colors.text, borderColor: colors.border }]}
+                style={inputStyle('quantity')}
                 placeholder="0"
-                placeholderTextColor={colors.textSecondary}
+                placeholderTextColor={ds.textTertiary}
                 value={formData.quantity}
-                onChangeText={(text) => setFormData({ ...formData, quantity: text })}
+                onChangeText={(text) => setFormData({ ...formData, quantity: sanitizeDecimal(text) })}
+                onBlur={() => touch('quantity')}
                 keyboardType="decimal-pad"
               />
+              <FieldError field="quantity" />
             </View>
 
-            <View style={styles.inputGroup}>
-              <Text style={[styles.inputLabel, { color: colors.textSecondary }]}>
-                {labels.cost}
-              </Text>
+            {/* Ortalama maliyet */}
+            <View style={styles.field}>
+              <Text style={[styles.label, { color: ds.textSecondary }]}>{labels.cost}</Text>
               <TextInput
-                style={[styles.input, { backgroundColor: colors.surface, color: colors.text, borderColor: colors.border }]}
-                placeholder="0.00"
-                placeholderTextColor={colors.textSecondary}
+                style={inputStyle('avgCost')}
+                placeholder="0,00"
+                placeholderTextColor={ds.textTertiary}
                 value={formData.avgCost}
-                onChangeText={(text) => setFormData({ ...formData, avgCost: text })}
+                onChangeText={(text) => setFormData({ ...formData, avgCost: sanitizeDecimal(text) })}
+                onBlur={() => touch('avgCost')}
                 keyboardType="decimal-pad"
               />
+              <FieldError field="avgCost" />
             </View>
 
+            {/* Fon: güncel fiyat */}
             {needsManualPrice && (
-              <View style={styles.inputGroup}>
+              <View style={styles.field}>
                 <View style={styles.labelRow}>
-                  <Text style={[styles.inputLabel, { color: colors.textSecondary }]}>
-                    {labels.price}
-                  </Text>
-                  <Text style={[styles.labelHint, { color: primary }]}>
-                    (Zorunlu)
-                  </Text>
+                  <Text style={[styles.label, { color: ds.textSecondary }]}>{labels.price}</Text>
+                  {!editMode && <Text style={[styles.labelHint, { color: ds.accent }]}>(Zorunlu)</Text>}
                 </View>
                 <TextInput
-                  style={[
-                    styles.input, 
-                    { backgroundColor: colors.surface, color: colors.text, borderColor: primary }
-                  ]}
-                  placeholder="0.00"
-                  placeholderTextColor={colors.textSecondary}
+                  style={inputStyle('currentPrice')}
+                  placeholder="0,00"
+                  placeholderTextColor={ds.textTertiary}
                   value={formData.currentPrice}
-                  onChangeText={(text) => setFormData({ ...formData, currentPrice: text })}
+                  onChangeText={(text) => setFormData({ ...formData, currentPrice: sanitizeDecimal(text) })}
+                  onBlur={() => touch('currentPrice')}
                   keyboardType="decimal-pad"
                 />
-                <View style={[styles.priceHint, { backgroundColor: primary + '10' }]}>
-                  <Ionicons name="information-circle" size={16} color={primary} />
-                  <Text style={[styles.priceHintText, { color: colors.textSecondary }]}>
-                    {getPriceHint()}
-                  </Text>
-                </View>
+                <FieldError field="currentPrice" />
+                <Text style={[styles.hint, { color: ds.textTertiary }]}>
+                  Fiyat, TEFAS’tan günde bir kez otomatik güncellenir. Girdiğiniz fiyat, TEFAS’a
+                  ulaşılamadığında kullanılır.
+                </Text>
               </View>
             )}
 
-            {/* Hedef Fiyat Alarmı */}
-            <View style={[styles.targetSection, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-              <View style={styles.targetHeader}>
-                <View style={styles.targetLeft}>
-                  <Ionicons name="notifications" size={24} color={primary} />
-                  <View>
-                    <Text style={[styles.targetTitle, { color: colors.text }]}>Hedef Fiyat Alarmı</Text>
-                    <Text style={[styles.targetSubtitle, { color: colors.textSecondary }]}>
+            {/* Hedef fiyat alarmı */}
+            <View style={[styles.alarmCard, { backgroundColor: ds.surface, borderColor: ds.border }]}>
+              <View style={styles.alarmHeader}>
+                <View style={styles.alarmLeft}>
+                  <View style={[styles.typeIcon, { backgroundColor: ds.accent + '14', width: 40, height: 40 }]}>
+                    <Ionicons name="notifications" size={20} color={ds.accent} />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={[styles.alarmTitle, { color: ds.text }]}>Hedef Fiyat Alarmı</Text>
+                    <Text style={[styles.alarmSubtitle, { color: ds.textSecondary }]}>
                       Fiyat hedefe ulaşınca bildirim al
                     </Text>
                   </View>
                 </View>
                 <Switch
                   value={targetEnabled}
-                  onValueChange={setTargetEnabled}
-                  trackColor={{ false: colors.border, true: primary + '60' }}
-                  thumbColor={targetEnabled ? primary : colors.textSecondary}
+                  onValueChange={(v) => {
+                    Haptics.selectionAsync();
+                    setTargetEnabled(v);
+                  }}
+                  trackColor={{ false: ds.border, true: ds.accent + '66' }}
+                  thumbColor={targetEnabled ? ds.accent : ds.textTertiary}
                 />
               </View>
 
               {targetEnabled && (
-                <View style={styles.targetContent}>
-                  <View style={styles.targetTypeSelector}>
+                <View style={styles.alarmBody}>
+                  <View style={styles.targetTypeRow}>
                     <TouchableOpacity
                       style={[
                         styles.targetTypeButton,
-                        { borderColor: colors.border },
-                        targetType === 'above' && { backgroundColor: colors.success + '15', borderColor: colors.success }
+                        { borderColor: ds.border },
+                        targetType === 'above' && { backgroundColor: ds.profitBg, borderColor: ds.profit },
                       ]}
                       onPress={() => setTargetType('above')}
                     >
-                      <Ionicons 
-                        name="trending-up" 
-                        size={18} 
-                        color={targetType === 'above' ? colors.success : colors.textSecondary} 
-                      />
-                      <Text style={[
-                        styles.targetTypeText, 
-                        { color: targetType === 'above' ? colors.success : colors.textSecondary }
-                      ]}>
+                      <Ionicons name="trending-up" size={16} color={targetType === 'above' ? ds.profit : ds.textSecondary} />
+                      <Text style={[styles.targetTypeText, { color: targetType === 'above' ? ds.profit : ds.textSecondary }]}>
                         Üstüne Çıkarsa
                       </Text>
                     </TouchableOpacity>
-                    
                     <TouchableOpacity
                       style={[
                         styles.targetTypeButton,
-                        { borderColor: colors.border },
-                        targetType === 'below' && { backgroundColor: colors.error + '15', borderColor: colors.error }
+                        { borderColor: ds.border },
+                        targetType === 'below' && { backgroundColor: ds.lossBg, borderColor: ds.loss },
                       ]}
                       onPress={() => setTargetType('below')}
                     >
-                      <Ionicons 
-                        name="trending-down" 
-                        size={18} 
-                        color={targetType === 'below' ? colors.error : colors.textSecondary} 
-                      />
-                      <Text style={[
-                        styles.targetTypeText, 
-                        { color: targetType === 'below' ? colors.error : colors.textSecondary }
-                      ]}>
+                      <Ionicons name="trending-down" size={16} color={targetType === 'below' ? ds.loss : ds.textSecondary} />
+                      <Text style={[styles.targetTypeText, { color: targetType === 'below' ? ds.loss : ds.textSecondary }]}>
                         Altına Düşerse
                       </Text>
                     </TouchableOpacity>
                   </View>
-
                   <TextInput
-                    style={[styles.input, { 
-                      backgroundColor: colors.background, 
-                      color: colors.text, 
-                      borderColor: targetType === 'above' ? colors.success : colors.error 
-                    }]}
+                    style={inputStyle('targetPrice')}
                     placeholder="Hedef fiyat girin"
-                    placeholderTextColor={colors.textSecondary}
+                    placeholderTextColor={ds.textTertiary}
                     value={targetPrice}
-                    onChangeText={setTargetPrice}
+                    onChangeText={(text) => setTargetPrice(sanitizeDecimal(text))}
+                    onBlur={() => touch('targetPrice')}
                     keyboardType="decimal-pad"
                   />
-
+                  <FieldError field="targetPrice" />
                   {editMode && existingHolding?.currentPrice && (
-                    <Text style={[styles.currentPriceHint, { color: colors.textSecondary }]}>
+                    <Text style={[styles.hint, { color: ds.textTertiary, textAlign: 'center' }]}>
                       Güncel fiyat: ₺{parseFloat(existingHolding.currentPrice).toLocaleString('tr-TR', { minimumFractionDigits: 2 })}
                     </Text>
                   )}
@@ -546,251 +666,164 @@ const AddHoldingScreen = ({ navigation, route }) => {
               )}
             </View>
 
-            <View style={[styles.infoCard, { backgroundColor: primary + '10', borderColor: primary + '30' }]}>
-              <Ionicons name="information-circle" size={20} color={primary} />
-              <Text style={[styles.infoText, { color: colors.textSecondary }]}>
-                {getInfoText()}
-              </Text>
+            {/* Bilgi */}
+            <View style={[styles.infoCard, { backgroundColor: ds.accent + '0D', borderColor: ds.accent + '2E' }]}>
+              <Ionicons name="information-circle" size={18} color={ds.accent} />
+              <Text style={[styles.infoText, { color: ds.textSecondary }]}>{infoText}</Text>
             </View>
 
+            {/* Kaydet */}
             <TouchableOpacity
               style={[
                 styles.saveButton,
-                { backgroundColor: primary },
-                !isFormValid() && styles.saveButtonDisabled,
+                { backgroundColor: ds.accent },
+                !canSave && { opacity: 0.45 },
               ]}
               onPress={handleSave}
-              disabled={!isFormValid()}
+              disabled={!canSave}
               activeOpacity={0.8}
             >
-              <Ionicons name="checkmark-circle" size={24} color="#FFFFFF" />
-              <Text style={styles.saveButtonText}>
+              <Ionicons name="checkmark-circle" size={22} color={ds.onAccent} />
+              <Text style={[styles.saveText, { color: ds.onAccent }]}>
                 {editMode ? 'Değişiklikleri Kaydet' : 'Varlığı Kaydet'}
               </Text>
             </TouchableOpacity>
+            {!canSave && (
+              <Text style={[styles.saveReason, { color: ds.textTertiary }]}>
+                Kaydetmek için: {validation.reason.toLocaleLowerCase('tr')}
+              </Text>
+            )}
           </>
         )}
 
-        <View style={{ height: 40 }} />
+        <View style={{ height: Spacing.xxl }} />
       </ScrollView>
     </View>
   );
 };
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-  },
+  container: { flex: 1 },
+  scroll: { paddingHorizontal: Spacing.md, paddingTop: Spacing.md },
+
   header: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: Spacing.md,
     paddingTop: Spacing.xl,
-    paddingBottom: Spacing.md,
-    borderBottomWidth: 1,
+    paddingBottom: Spacing.sm,
   },
-  backButton: {
-    width: 40,
-    height: 40,
+  headerTitle: { ...Typography.h2 },
+  iconButton: {
+    width: A11y.minTouchTarget,
+    height: A11y.minTouchTarget,
+    borderRadius: Radius.md,
+    borderWidth: 1,
+    alignItems: 'center',
     justifyContent: 'center',
   },
-  headerTitle: {
-    ...Typography.h2,
-  },
-  scrollContent: {
-    paddingHorizontal: Spacing.md,
-    paddingTop: Spacing.lg,
-  },
-  sectionTitle: {
-    ...Typography.h3,
-    marginBottom: Spacing.md,
-  },
-  typeGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: Spacing.sm,
-  },
+
+  sectionTitle: { ...Typography.h3, marginBottom: Spacing.sm },
+
+  typeGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.sm },
   typeCard: {
     width: '31%',
-    aspectRatio: 0.9,
-    borderRadius: BorderRadius.lg,
-    padding: Spacing.sm,
+    aspectRatio: 0.95,
+    borderRadius: Radius.md,
+    borderWidth: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    borderWidth: 1,
-    borderColor: 'transparent',
-  },
-  typeCardDisabled: {
-    opacity: 0.6,
+    gap: Spacing.xs,
   },
   typeIcon: {
-    width: 50,
-    height: 50,
-    borderRadius: BorderRadius.md,
+    width: 44,
+    height: 44,
+    borderRadius: Radius.sm,
+    alignItems: 'center',
     justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: Spacing.xs,
   },
-  typeName: {
-    fontSize: 12,
-    fontWeight: '600',
-    textAlign: 'center',
-  },
-  inputGroup: {
-    marginBottom: Spacing.md,
-  },
-  labelRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: Spacing.xs,
-    marginBottom: Spacing.xs,
-  },
-  inputLabel: {
-    ...Typography.bodySmall,
-    fontWeight: '600',
-    marginBottom: Spacing.xs,
-  },
-  labelHint: {
-    ...Typography.bodySmall,
-    fontWeight: '500',
-    marginBottom: Spacing.xs,
-  },
+  typeName: { ...Typography.caption, fontWeight: '600', textAlign: 'center' },
+
+  field: { marginBottom: Spacing.md },
+  label: { ...Typography.caption, fontWeight: '600', marginBottom: Spacing.xs },
+  labelRow: { flexDirection: 'row', gap: Spacing.xs, alignItems: 'center' },
+  labelHint: { ...Typography.caption, fontWeight: '600', marginBottom: Spacing.xs },
   input: {
-    height: 56,
-    borderRadius: BorderRadius.md,
+    minHeight: 52,
+    borderRadius: Radius.sm,
+    borderWidth: 1,
     paddingHorizontal: Spacing.md,
-    fontSize: 16,
+    ...Typography.body,
+  },
+  inputDisabled: { opacity: 0.55 },
+  fieldError: { ...Typography.caption, marginTop: Spacing.xs },
+  hint: { ...Typography.caption, marginTop: Spacing.xs, lineHeight: 16 },
+  fundName: { ...Typography.caption, marginTop: Spacing.xs },
+
+  suggestList: {
     borderWidth: 1,
-  },
-  inputDisabled: {
-    opacity: 0.6,
-  },
-  fundNameHint: {
-    ...Typography.caption,
+    borderRadius: Radius.sm,
     marginTop: Spacing.xs,
-    marginLeft: Spacing.xs,
+    overflow: 'hidden',
   },
-  currencyList: {
-    borderWidth: 1,
-    borderRadius: BorderRadius.md,
-    marginTop: Spacing.xs,
-    maxHeight: 200,
-  },
-  currencyItem: {
+  suggestItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    padding: Spacing.md,
-    borderBottomWidth: 1,
-    gap: Spacing.sm,
-  },
-  currencyCode: {
-    fontSize: 16,
-    fontWeight: '700',
-    width: 50,
-  },
-  currencyName: {
-    fontSize: 14,
-    flex: 1,
-  },
-  priceHint: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: Spacing.xs,
-    marginTop: Spacing.sm,
     padding: Spacing.sm,
-    borderRadius: BorderRadius.sm,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    gap: Spacing.sm,
+    minHeight: A11y.minTouchTarget,
   },
-  priceHintText: {
-    ...Typography.caption,
-    flex: 1,
-  },
-  // Hedef Fiyat Alarmı
-  targetSection: {
-    borderRadius: BorderRadius.lg,
-    padding: Spacing.md,
-    marginTop: Spacing.md,
+  suggestCode: { ...Typography.body, fontWeight: '700', width: 52 },
+  suggestName: { ...Typography.bodySmall, flex: 1 },
+
+  alarmCard: {
+    borderRadius: Radius.md,
     borderWidth: 1,
+    padding: Spacing.md,
+    marginTop: Spacing.xs,
   },
-  targetHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  targetLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: Spacing.sm,
-    flex: 1,
-  },
-  targetTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  targetSubtitle: {
-    fontSize: 12,
-    marginTop: 2,
-  },
-  targetContent: {
-    marginTop: Spacing.md,
-    paddingTop: Spacing.md,
-    borderTopWidth: 1,
-    borderTopColor: 'rgba(128,128,128,0.2)',
-  },
-  targetTypeSelector: {
-    flexDirection: 'row',
-    gap: Spacing.sm,
-    marginBottom: Spacing.md,
-  },
+  alarmHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  alarmLeft: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, flex: 1 },
+  alarmTitle: { ...Typography.body, fontWeight: '600' },
+  alarmSubtitle: { ...Typography.caption, marginTop: 1 },
+  alarmBody: { marginTop: Spacing.md, gap: Spacing.sm },
+  targetTypeRow: { flexDirection: 'row', gap: Spacing.sm },
   targetTypeButton: {
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: Spacing.xs,
-    paddingVertical: Spacing.sm,
-    borderRadius: BorderRadius.md,
+    minHeight: A11y.minTouchTarget,
+    borderRadius: Radius.sm,
     borderWidth: 1,
   },
-  targetTypeText: {
-    fontSize: 13,
-    fontWeight: '600',
-  },
-  currentPriceHint: {
-    fontSize: 12,
-    marginTop: Spacing.sm,
-    textAlign: 'center',
-  },
+  targetTypeText: { ...Typography.caption, fontWeight: '600' },
+
   infoCard: {
     flexDirection: 'row',
-    padding: Spacing.md,
-    borderRadius: BorderRadius.md,
-    gap: Spacing.sm,
-    marginTop: Spacing.md,
+    gap: Spacing.xs,
+    padding: Spacing.sm,
+    borderRadius: Radius.sm,
     borderWidth: 1,
+    marginTop: Spacing.md,
+    alignItems: 'flex-start',
   },
-  infoText: {
-    ...Typography.bodySmall,
-    flex: 1,
-    lineHeight: 20,
-  },
+  infoText: { ...Typography.caption, flex: 1, lineHeight: 16 },
+
   saveButton: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    padding: Spacing.md,
-    borderRadius: BorderRadius.md,
-    marginTop: Spacing.xl,
-    gap: Spacing.sm,
+    gap: Spacing.xs,
+    minHeight: 52,
+    borderRadius: Radius.md,
+    marginTop: Spacing.lg,
   },
-  saveButtonDisabled: {
-    opacity: 0.5,
-  },
-  saveButtonText: {
-    ...Typography.body,
-    color: '#FFFFFF',
-    fontWeight: '700',
-  },
+  saveText: { ...Typography.body, fontWeight: '700' },
+  saveReason: { ...Typography.caption, textAlign: 'center', marginTop: Spacing.xs },
 });
 
 export default AddHoldingScreen;
