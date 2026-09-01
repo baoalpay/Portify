@@ -35,8 +35,6 @@
       "edgeToEdgeEnabled": true,
       "permissions": [
         "NOTIFICATIONS",
-        "VIBRATE",
-        "NOTIFICATIONS",
         "VIBRATE"
       ],
       "package": "com.anonymous.Portify"

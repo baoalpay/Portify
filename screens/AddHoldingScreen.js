@@ -188,7 +188,12 @@ const AddHoldingScreen = ({ navigation, route }) => {
       return { errors, reason };
     }
     if (!noSymbolRequired && !formData.symbol.trim()) {
-      errors.symbol = selectedType === 'fund' ? 'Fon kodu girin' : 'Sembol girin';
+      errors.symbol =
+        selectedType === 'fund'
+          ? 'Fon kodu girin'
+          : selectedType === 'currency'
+            ? 'Listeden bir döviz seçin'
+            : 'Sembol girin';
       reason = reason || errors.symbol;
     }
     if (!formData.quantity.trim()) {

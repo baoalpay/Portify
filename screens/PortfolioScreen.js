@@ -147,8 +147,12 @@ const PortfolioScreen = () => {
 
   const handleQuickAdd = (presetType) => {
     Haptics.selectionAsync();
+    // initial: false — AddHolding, HoldingsList'in ÜZERİNE push edilir; aksi halde
+    // yığının tek ekranı olur, geri tuşu pop edemez ve beforeRemove
+    // ("kaydedilmemiş değişiklik" onayı) hiç ateşlenmez
     navigation.navigate('Holdings', {
       screen: 'AddHolding',
+      initial: false,
       params: presetType ? { presetType } : undefined,
     });
   };
