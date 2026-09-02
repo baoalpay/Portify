@@ -22,6 +22,9 @@ export const ThemeProvider = ({ children }) => {
   const [isDark, setIsDark] = useState(systemColorScheme === 'dark');
   const [primaryColor, setPrimaryColor] = useState(Colors.primary);
   const [selectedColorId, setSelectedColorId] = useState('purple');
+  // Kayıtlı tercih okunana dek isDark sistem varsayımıdır; splash bu bayrağı
+  // bekler ki uygulama yanlış temayla görünüp sonra "yanıp sönmesin"
+  const [themeLoaded, setThemeLoaded] = useState(false);
 
   // Load theme preference on mount
   useEffect(() => {
@@ -29,19 +32,23 @@ export const ThemeProvider = ({ children }) => {
   }, []);
 
   const loadThemePreference = async () => {
-    const savedTheme = await preferencesRepository.loadTheme();
-    if (savedTheme !== null) {
-      setIsDark(savedTheme === 'dark');
-    }
-
-    // Renk tercihini yükle
-    const savedColor = await preferencesRepository.loadThemeColor();
-    if (savedColor) {
-      const colorObj = THEME_COLORS.find(c => c.id === savedColor);
-      if (colorObj) {
-        setPrimaryColor(colorObj.color);
-        setSelectedColorId(savedColor);
+    try {
+      const savedTheme = await preferencesRepository.loadTheme();
+      if (savedTheme !== null) {
+        setIsDark(savedTheme === 'dark');
       }
+
+      // Renk tercihini yükle
+      const savedColor = await preferencesRepository.loadThemeColor();
+      if (savedColor) {
+        const colorObj = THEME_COLORS.find(c => c.id === savedColor);
+        if (colorObj) {
+          setPrimaryColor(colorObj.color);
+          setSelectedColorId(savedColor);
+        }
+      }
+    } finally {
+      setThemeLoaded(true);
     }
   };
 
@@ -62,6 +69,7 @@ export const ThemeProvider = ({ children }) => {
 
   const theme = {
     isDark,
+    themeLoaded,
     colors: isDark ? Colors.dark : Colors.light,
     primary: primaryColor,
     selectedColorId,

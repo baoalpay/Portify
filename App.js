@@ -3,7 +3,7 @@ import { NavigationContainer } from '@react-navigation/native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createStackNavigator } from '@react-navigation/stack';
 import { Ionicons } from '@expo/vector-icons';
-import { Platform, AppState } from 'react-native';
+import { Platform, AppState, View } from 'react-native';
 import { ThemeProvider, useTheme } from './context/ThemeContext';
 import PortfolioScreen from './screens/PortfolioScreen';
 import HoldingsScreen from './screens/HoldingsScreen';
@@ -126,14 +126,11 @@ function PriceUpdateManager({ children }) {
   const intervalRef = useRef(null);
   const appState = useRef(AppState.currentState);
 
-  // İlk yükleme
+  // Fiyat güncelleme AÇILIŞI BEKLETMEZ: ayarlar ve varlıklar splash
+  // sırasında AppContent.initApp'te yüklendi; ağ isteği arkada çalışır,
+  // fiyatlar gelince ekranlar store üzerinden kendiliğinden tazelenir.
   useEffect(() => {
-    const init = async () => {
-      await loadSettings();
-      await loadHoldings();
-      await updatePrices();
-    };
-    init();
+    updatePrices();
   }, []);
 
   // Zamanlayıcı kurulumu
@@ -195,52 +192,93 @@ function PriceUpdateManager({ children }) {
   return children;
 }
 
-// Ana uygulama wrapper'ı - Splash Screen ve Onboarding ile
+// Ana uygulama wrapper'ı — açılış orkestrasyonu.
+//
+// Sıra: (1) veri göçleri → (2) ayarlar → (3) portföyler + varlıklar →
+// (4) onboarding kontrolü. Bunlar splash SÜRESİNCE biter; splash ancak
+// arkadaki ağaç gerçekten çizildikten sonra (iki kare + minimum marka
+// süresi) fade ile kalkar — arkada asla boş/yarı yüklü ekran görünmez.
+// Fiyat güncelleme bu zincirde YOKTUR: ağ isteği açılışı bekletmesin
+// diye PriceUpdateManager arkada başlatır.
+
+// Splash en az bu kadar görünür (anlık yanıp sönme hissi olmasın)
+const MIN_SPLASH_MS = 900;
+
 function AppContent() {
-  const [showSplash, setShowSplash] = useState(true);
+  const { isDark, themeLoaded } = useTheme();
+  const ds = isDark ? Palette.dark : Palette.light;
+
+  const loadSettings = usePortfolioStore((state) => state.loadSettings);
+  const loadPortfolios = usePortfolioStore((state) => state.loadPortfolios);
+  const loadHoldings = usePortfolioStore((state) => state.loadHoldings);
+
   const [showOnboarding, setShowOnboarding] = useState(false);
-  const [isReady, setIsReady] = useState(false);
+  const [isReady, setIsReady] = useState(false); // kritik açılış işleri bitti
+  const [splashVisible, setSplashVisible] = useState(true); // fade tetikleyici
+  const [splashGone, setSplashGone] = useState(false); // fade bitti, unmount
+
+  const startedAtRef = useRef(Date.now());
 
   useEffect(() => {
     initApp();
   }, []);
 
   const initApp = async () => {
-    // Veri göçleri, veri okuyan her şeyden önce tamamlanmalı.
-    // (isReady bunu bekler; PriceUpdateManager ve ekranlar sonra kurulur.)
+    const t0 = Date.now();
+    // 1) Göçler: veri okuyan her şeyden önce
     await migrationRepository.runMigrations();
+    const t1 = Date.now();
+    // 2-3) İlk çizimin ihtiyacı olan veri: ayarlar (tema/para birimi/
+    // gizlilik) + portföyler + aktif portföyün varlıkları
+    await loadSettings();
+    await loadPortfolios();
+    await loadHoldings();
+    const t2 = Date.now();
     const completed = await checkOnboardingCompleted();
     setShowOnboarding(!completed);
     setIsReady(true);
+    console.log(
+      `Açılış kritik yol: göç ${t1 - t0}ms + veri ${t2 - t1}ms = ${Date.now() - t0}ms`
+    );
   };
 
-  const handleSplashFinish = () => {
-    setShowSplash(false);
-  };
-
-  const handleOnboardingComplete = () => {
-    setShowOnboarding(false);
-  };
-
-  if (!isReady) {
-    return null;
-  }
-
-  // Onboarding gösterilecekse
-  if (showOnboarding && !showSplash) {
-    return <OnboardingScreen onComplete={handleOnboardingComplete} />;
-  }
+  // Kritik işler VE tema tercihi hazır olunca: minimum süreyi tamamla,
+  // arkadaki ağacın ilk karelerinin çizilmesini bekle, sonra fade başlat
+  useEffect(() => {
+    if (!isReady || !themeLoaded) return;
+    const wait = Math.max(0, MIN_SPLASH_MS - (Date.now() - startedAtRef.current));
+    const timer = setTimeout(() => {
+      requestAnimationFrame(() =>
+        requestAnimationFrame(() => setSplashVisible(false))
+      );
+    }, wait);
+    return () => clearTimeout(timer);
+  }, [isReady, themeLoaded]);
 
   return (
-    <>
-      <PriceUpdateManager>
-        <NavigationContainer>
-          <MainTabs />
-        </NavigationContainer>
-      </PriceUpdateManager>
-      
-      {showSplash && <SplashScreen onFinish={handleSplashFinish} />}
-    </>
+    <View style={{ flex: 1, backgroundColor: ds.background }}>
+      {/* Uygulama ağacı splash'in ALTINDA kurulur; splash hazır ekrana açılır */}
+      {isReady &&
+        (showOnboarding ? (
+          <OnboardingScreen onComplete={() => setShowOnboarding(false)} />
+        ) : (
+          <PriceUpdateManager>
+            <NavigationContainer>
+              <MainTabs />
+            </NavigationContainer>
+          </PriceUpdateManager>
+        ))}
+
+      {!splashGone && (
+        <SplashScreen
+          visible={splashVisible}
+          onHidden={() => {
+            setSplashGone(true);
+            console.log(`Splash kapandı: toplam ${Date.now() - startedAtRef.current}ms`);
+          }}
+        />
+      )}
+    </View>
   );
 }
 

@@ -398,3 +398,64 @@ boş string olsun istiyorsun.
 6. Test et: (a) temiz kurulum, (b) eski sürümden veriyle güncelleme
    (emülatörde eski APK ile veri oluştur → yeni build'i üzerine kur),
    (c) göç sonrası "Tüm Verileri Sil" + yeniden veri girişi.
+
+---
+
+## 9. Açılış Akışı ve Logo Değişimi
+
+> Eklendi: 2 Eylül 2026. İlgili kod: `App.js` (AppContent),
+> `components/SplashScreen.js`, `context/ThemeContext.js` (themeLoaded).
+
+### Açılışta ne, ne zaman çalışır?
+
+Açılışın iki perdesi vardır:
+
+1. **Native splash** (JS yüklenmeden önce): `app.json > splash` yapılandırması.
+   Şu an Expo'nun varsayılan yer tutucu görseli ve beyaz zemin. Bu aşama
+   uygulama içi tema tercihini BİLEMEZ (tercih AsyncStorage'da, JS henüz yok);
+   koyu temalı kullanıcı soğuk açılışta kısa bir beyaz an görür. Logo
+   geldiğinde zemin marka rengine alınarak bu da giderilecek (aşağıda).
+2. **JS splash** (`components/SplashScreen.js`): tasarım sistemi gradyanı +
+   "Portify" yazısı (logo yer tutucusu). Süresi SABİT DEĞİLDİR; `App.js`
+   şu kritik işler bitene dek perdeyi tutar:
+   - veri göçleri (`migrationRepository.runMigrations`)
+   - ayarlar (`loadSettings` — tema/para birimi/gizlilik ilk çizimi etkiler)
+   - portföyler + aktif portföyün varlıkları (`loadPortfolios`, `loadHoldings`)
+   - onboarding kontrolü ve tema tercihinin okunması (`themeLoaded`)
+
+   Ardından arkadaki uygulama ağacının gerçekten çizilmesi beklenir
+   (iki kare) + minimum marka süresi (`MIN_SPLASH_MS = 900`) tamamlanır ve
+   perde 350 ms fade ile kalkar. **Fiyat güncelleme bu zincirde YOKTUR**:
+   `PriceUpdateManager` onu arka planda başlatır, ekranlar son bilinen
+   fiyatla açılır ve yeni fiyat gelince kendiliğinden tazelenir.
+
+Ölçüm logları açılışta konsola yazılır: "Açılış kritik yol: ..." ve
+"Splash kapandı: toplam ...". Kritik yol emülatörde 60-450 ms
+(ilk kurulumda AsyncStorage ilk dokunuşuyla ~1,2 sn) ölçüldü.
+
+### Logo geldiğinde değiştirilecekler (kontrol listesi)
+
+1. **`assets/icon.png`** — uygulama ikonu, 1024×1024 px, kare, ŞEFFAFSIZ
+   (köşeleri işletim sistemi yuvarlar).
+2. **`assets/adaptive-icon.png`** — Android adaptif ikon ön katmanı,
+   1024×1024 px, şeffaf PNG; logo ortadaki ~%66'lık güvenli daireye sığmalı
+   (kenarlar cihaza göre kırpılır). Arka plan rengi `app.json >
+   android.adaptiveIcon.backgroundColor` (markaya göre güncelle).
+3. **`assets/splash-icon.png`** — native splash görseli, 1024×1024 şeffaf PNG.
+   Aynı anda `app.json > splash.backgroundColor`'ı marka rengine çek
+   (ör. `#5B4BD6`) ki beyaz native aşama markalı olsun ve JS splash
+   gradyanına yumuşak bağlansın.
+4. **`assets/favicon.png`** — web önizleme ikonu, 48×48 px.
+5. **`components/SplashScreen.js`** — "LOGO YER TUTUCUSU" yorumuyla işaretli
+   blok: `<Animated.Text>Portify</Animated.Text>` yerine
+   `<Animated.Image source={require('../assets/splash-icon.png')} ...>`.
+   Geçiş/zamanlama mantığına DOKUNMA; yalnızca içerik bloğu değişir.
+6. Native görseller (1-4) sadece dosya değiştirmekle cihaza yansımaz;
+   yeniden üretim gerekir:
+
+   ```bash
+   npx expo prebuild --clean   # android/ yeniden üretilir
+   npx expo run:android        # yerel test derlemesi
+   ```
+
+   EAS build'de `prebuild` bulutta otomatik çalışır, ek adım gerekmez.
